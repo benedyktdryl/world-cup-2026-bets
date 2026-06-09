@@ -1,5 +1,11 @@
-import { Link, NavLink, Outlet } from "react-router";
-import { Button } from "~/components/ui/button";
+import { Outlet } from "react-router";
+import { AppSidebar } from "~/components/app-sidebar";
+import { Separator } from "~/components/ui/separator";
+import {
+  SidebarInset,
+  SidebarProvider,
+  SidebarTrigger,
+} from "~/components/ui/sidebar";
 import { requireSession } from "~/lib/server/session";
 import type { Route } from "./+types/app";
 
@@ -14,62 +20,30 @@ export async function loader({ request }: Route.LoaderArgs) {
 }
 
 export default function AppLayout({ loaderData }: Route.ComponentProps) {
-  const navItems = [
-    ["Dashboard", "/app"],
-    ["Matches", "/app/matches"],
-    ["Groups", "/app/groups"],
-    ["Bracket", "/app/bracket"],
-    ["Leaderboard", "/app/leaderboard"],
-  ];
-
   return (
-    <main
-      id="main-content"
-      className="mx-auto flex min-h-svh w-full max-w-7xl flex-col gap-8 px-6 py-8"
-    >
-      <header className="sticky top-0 z-20 -mx-6 flex flex-col gap-4 border-b bg-background/90 px-6 py-4 backdrop-blur">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <Link to="/app" className="flex flex-col gap-1">
-            <span className="font-semibold text-2xl tracking-tight">
-              World Cup Bets
+    <SidebarProvider>
+      <AppSidebar userName={loaderData.user.name} />
+      <SidebarInset>
+        <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
+          <SidebarTrigger />
+          <Separator
+            orientation="vertical"
+            className="mr-2 data-[orientation=vertical]:h-4"
+          />
+          <div className="flex flex-col">
+            <span className="font-medium text-sm">World Cup 2026</span>
+            <span className="text-muted-foreground text-xs">
+              Office betting contest
             </span>
-            <span className="text-muted-foreground text-sm">
-              Signed in as {loaderData.user.name}
-            </span>
-          </Link>
-          <Button asChild variant="outline">
-            <Link to="/admin/invites">Admin</Link>
-          </Button>
+          </div>
+        </header>
+        <div
+          id="main-content"
+          className="flex flex-1 flex-col gap-6 p-4 md:p-6"
+        >
+          <Outlet />
         </div>
-        <nav className="flex gap-2 overflow-x-auto" aria-label="App navigation">
-          {navItems.map(([label, href]) => (
-            <Button key={href} asChild variant="ghost" size="sm">
-              <NavLink
-                to={href}
-                end={href === "/app"}
-                className={({ isActive }) =>
-                  isActive
-                    ? "bg-muted text-foreground"
-                    : "text-muted-foreground"
-                }
-              >
-                {label}
-              </NavLink>
-            </Button>
-          ))}
-        </nav>
-      </header>
-      <section className="flex flex-col gap-8">
-        <div className="flex flex-col gap-2">
-          <p className="font-medium text-muted-foreground text-sm uppercase tracking-[0.25em]">
-            Contest Hub
-          </p>
-          <h1 className="text-balance font-semibold text-4xl tracking-tight">
-            Follow every prediction from groups to the final.
-          </h1>
-        </div>
-        <Outlet />
-      </section>
-    </main>
+      </SidebarInset>
+    </SidebarProvider>
   );
 }

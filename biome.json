@@ -32,14 +32,18 @@
   },
   "overrides": [
     {
-      "includes": ["app/components/ui/**"],
+      "includes": ["app/components/ui/**", "app/hooks/**"],
       "linter": {
         "rules": {
           "a11y": {
             "useSemanticElements": "off"
           },
+          "correctness": {
+            "useExhaustiveDependencies": "off"
+          },
           "suspicious": {
-            "noArrayIndexKey": "off"
+            "noArrayIndexKey": "off",
+            "noDocumentCookie": "off"
           }
         }
       }
