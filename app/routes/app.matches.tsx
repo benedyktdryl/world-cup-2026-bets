@@ -3,6 +3,7 @@ import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Empty, EmptyContent, EmptyTitle } from "~/components/ui/empty";
 import { Input } from "~/components/ui/input";
+import { MATCHES_ORDER_BY } from "~/lib/matches";
 import { upsertBet } from "~/lib/server/betting";
 import { createAppDatabase, runMigrations } from "~/lib/server/db";
 import { requireSession } from "~/lib/server/session";
@@ -49,7 +50,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         LEFT JOIN teams away ON away.id = matches.away_team_id
         LEFT JOIN bets
           ON bets.match_id = matches.id AND bets.user_id = ?
-        ORDER BY matches.kickoff_at ASC`,
+        ORDER BY ${MATCHES_ORDER_BY}`,
       )
       .all(session.user.id);
     return { matches };

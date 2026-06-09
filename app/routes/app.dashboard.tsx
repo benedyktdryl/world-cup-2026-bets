@@ -1,4 +1,5 @@
 import { Badge } from "~/components/ui/badge";
+import { MATCHES_ORDER_BY } from "~/lib/matches";
 import { getLeaderboard } from "~/lib/server/betting";
 import { createAppDatabase, runMigrations } from "~/lib/server/db";
 import { requireSession } from "~/lib/server/session";
@@ -44,7 +45,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         LEFT JOIN teams home ON home.id = matches.home_team_id
         LEFT JOIN teams away ON away.id = matches.away_team_id
         WHERE matches.status = 'SCHEDULED'
-        ORDER BY matches.kickoff_at ASC
+        ORDER BY ${MATCHES_ORDER_BY}
         LIMIT 1`,
       )
       .get();

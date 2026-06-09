@@ -1,5 +1,6 @@
 import { Badge } from "~/components/ui/badge";
 import { Empty, EmptyContent, EmptyTitle } from "~/components/ui/empty";
+import { MATCHES_ORDER_BY } from "~/lib/matches";
 import { createAppDatabase, runMigrations } from "~/lib/server/db";
 import { requireSession } from "~/lib/server/session";
 import type { Route } from "./+types/app.bracket";
@@ -36,7 +37,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         LEFT JOIN teams home ON home.id = matches.home_team_id
         LEFT JOIN teams away ON away.id = matches.away_team_id
         WHERE matches.stage != 'GROUP'
-        ORDER BY matches.kickoff_at ASC`,
+        ORDER BY ${MATCHES_ORDER_BY}`,
       )
       .all();
 
