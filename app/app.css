@@ -1,28 +1,25 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
-@import "@fontsource-variable/geist";
+@import "@fontsource-variable/figtree";
 
 @custom-variant dark (&:is(.dark *));
 
 @theme {
   --font-sans:
-    "Inter", ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji",
-    "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+    "Figtree Variable", ui-sans-serif, system-ui, sans-serif,
+    "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
 }
 
 html,
 body {
-  @apply bg-white dark:bg-gray-950;
-
-  @media (prefers-color-scheme: dark) {
-    color-scheme: dark;
-  }
+  @apply bg-background text-foreground;
+  color-scheme: light;
 }
 
 @theme inline {
   --font-heading: var(--font-sans);
-  --font-sans: "Geist Variable", sans-serif;
+  --font-sans: "Figtree Variable", sans-serif;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -64,38 +61,38 @@ body {
 }
 
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
+  --background: oklch(0.99 0.004 195);
+  --foreground: oklch(0.22 0.02 220);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
+  --card-foreground: oklch(0.22 0.02 220);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --popover-foreground: oklch(0.22 0.02 220);
+  --primary: oklch(0.58 0.13 192);
+  --primary-foreground: oklch(0.99 0.01 195);
+  --secondary: oklch(0.94 0.04 192);
+  --secondary-foreground: oklch(0.35 0.06 192);
+  --muted: oklch(0.96 0.02 195);
+  --muted-foreground: oklch(0.5 0.03 210);
+  --accent: oklch(0.93 0.05 192);
+  --accent-foreground: oklch(0.32 0.07 192);
+  --destructive: oklch(0.62 0.2 25);
+  --border: oklch(0.9 0.02 195);
+  --input: oklch(0.9 0.02 195);
+  --ring: oklch(0.58 0.13 192);
+  --chart-1: oklch(0.58 0.13 192);
+  --chart-2: oklch(0.72 0.1 192);
+  --chart-3: oklch(0.62 0.2 25);
+  --chart-4: oklch(0.45 0.06 220);
+  --chart-5: oklch(0.78 0.08 192);
+  --radius: 0.5rem;
+  --sidebar: oklch(0.98 0.01 195);
+  --sidebar-foreground: oklch(0.28 0.03 220);
+  --sidebar-primary: oklch(0.58 0.13 192);
+  --sidebar-primary-foreground: oklch(0.99 0.01 195);
+  --sidebar-accent: oklch(0.94 0.04 192);
+  --sidebar-accent-foreground: oklch(0.32 0.07 192);
+  --sidebar-border: oklch(0.9 0.02 195);
+  --sidebar-ring: oklch(0.58 0.13 192);
 }
 
 .dark {
@@ -167,20 +164,16 @@ body {
   .hero-glow {
     background:
       radial-gradient(
-        circle at 20% 20%,
-        color-mix(in oklch, var(--primary), transparent 55%),
-        transparent 32rem
-      ),
-      radial-gradient(
-        circle at 80% 10%,
-        color-mix(in oklch, var(--chart-2), transparent 45%),
+        circle at 15% 15%,
+        color-mix(in oklch, var(--primary), transparent 70%),
         transparent 28rem
       ),
-      linear-gradient(
-        135deg,
-        color-mix(in oklch, var(--background), white 4%),
-        var(--background)
-      );
+      radial-gradient(
+        circle at 85% 5%,
+        color-mix(in oklch, var(--secondary), transparent 40%),
+        transparent 24rem
+      ),
+      linear-gradient(180deg, oklch(0.99 0.01 195), var(--background));
   }
 
   .animate-rise {

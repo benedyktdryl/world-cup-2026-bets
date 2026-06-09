@@ -43,8 +43,8 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="animate-rise-delay hidden min-h-[32rem] rounded-[2rem] border bg-background/45 p-6 backdrop-blur lg:flex">
-            <div className="flex w-full flex-col justify-between rounded-[1.5rem] border border-primary/20 bg-gradient-to-b from-primary/15 to-transparent p-6">
+          <div className="animate-rise-delay hidden min-h-[32rem] rounded-2xl border bg-card p-6 shadow-sm lg:flex">
+            <div className="flex w-full flex-col justify-between rounded-xl border border-primary/15 bg-gradient-to-b from-secondary/80 to-card p-6">
               <div className="flex items-center justify-between text-sm">
                 <span className="text-muted-foreground">Final</span>
                 <span className="rounded-full bg-primary px-3 py-1 text-primary-foreground">
