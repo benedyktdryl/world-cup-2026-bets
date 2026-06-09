@@ -1,14 +1,8 @@
-import { Form, useActionData } from "react-router";
-import { Badge } from "~/components/ui/badge";
-import { Button } from "~/components/ui/button";
+import { useActionData } from "react-router";
+import { MatchesDataTable } from "~/components/matches-data-table";
 import { Empty, EmptyContent, EmptyTitle } from "~/components/ui/empty";
-import { Input } from "~/components/ui/input";
 import { MATCHES_ORDER_BY } from "~/lib/matches";
-import {
-  isMatchLockedForBetting,
-  isUnfetchedKnockoutMatch,
-  upsertBet,
-} from "~/lib/server/betting";
+import { upsertBet } from "~/lib/server/betting";
 import { createAppDatabase, runMigrations } from "~/lib/server/db";
 import { requireSession } from "~/lib/server/session";
 import type { Route } from "./+types/app.matches";
@@ -28,6 +22,10 @@ type MatchRow = {
 };
 
 type ActionResult = { error?: string; ok?: boolean };
+
+export function meta(_args: Route.MetaArgs) {
+  return [{ title: "Matches | World Cup Bets" }];
+}
 
 export async function loader({ request }: Route.LoaderArgs) {
   const session = await requireSession(request);
@@ -107,7 +105,7 @@ export default function Matches({ loaderData }: Route.ComponentProps) {
 
   if (!loaderData.matches.length) {
     return (
-      <Empty className="rounded-2xl border">
+      <Empty className="rounded-xl border">
         <EmptyContent>
           <EmptyTitle>No Matches Yet</EmptyTitle>
           <p className="text-muted-foreground">
@@ -120,102 +118,24 @@ export default function Matches({ loaderData }: Route.ComponentProps) {
 
   return (
     <section className="flex flex-col gap-4">
+      <div className="flex flex-col gap-1">
+        <h1 className="font-semibold text-3xl tracking-tight">Matches</h1>
+        <p className="text-muted-foreground text-sm">
+          Predict scores before kickoff. Exact scores earn 3 points, correct
+          result earns 1.
+        </p>
+      </div>
       {actionData?.error ? (
         <p aria-live="polite" className="text-destructive text-sm">
           {actionData.error}
         </p>
       ) : null}
       {actionData?.ok ? (
-        <p aria-live="polite" className="text-sm text-muted-foreground">
+        <p aria-live="polite" className="text-muted-foreground text-sm">
           Bet saved.
         </p>
       ) : null}
-      {loaderData.matches.map((match) => {
-        const locked = isMatchLockedForBetting(match);
-        const homeInputId = `${match.id}-predicted-home`;
-        const awayInputId = `${match.id}-predicted-away`;
-        return (
-          <article
-            key={match.id}
-            className="grid gap-4 rounded-2xl border bg-card p-5 text-card-foreground lg:grid-cols-[1fr_auto]"
-          >
-            <div className="flex min-w-0 flex-col gap-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="secondary">{match.stage}</Badge>
-                {match.group_code ? (
-                  <Badge variant="outline">Group {match.group_code}</Badge>
-                ) : null}
-                <span className="text-muted-foreground text-sm">
-                  {new Intl.DateTimeFormat(undefined, {
-                    dateStyle: "medium",
-                    timeStyle: "short",
-                  }).format(new Date(match.kickoff_at))}
-                </span>
-              </div>
-              <div className="grid gap-2 text-2xl sm:grid-cols-[1fr_auto_1fr] sm:items-center">
-                <span className="truncate font-semibold">
-                  {match.home_team ?? "TBD"}
-                </span>
-                <span className="text-muted-foreground text-sm">vs</span>
-                <span className="truncate font-semibold sm:text-right">
-                  {match.away_team ?? "TBD"}
-                </span>
-              </div>
-              {match.status === "FINISHED" ? (
-                <p className="font-semibold tabular-nums">
-                  Final: {match.home_goals}-{match.away_goals}
-                </p>
-              ) : null}
-            </div>
-            <Form method="post" className="flex items-end gap-2">
-              <input type="hidden" name="matchId" value={match.id} />
-              <label
-                htmlFor={homeInputId}
-                className="flex flex-col gap-1 text-sm"
-              >
-                Home
-                <Input
-                  id={homeInputId}
-                  name="predictedHomeGoals"
-                  type="number"
-                  inputMode="numeric"
-                  min={0}
-                  defaultValue={match.predicted_home_goals ?? ""}
-                  disabled={locked}
-                  className="w-20"
-                  aria-label="Predicted home goals"
-                />
-              </label>
-              <label
-                htmlFor={awayInputId}
-                className="flex flex-col gap-1 text-sm"
-              >
-                Away
-                <Input
-                  id={awayInputId}
-                  name="predictedAwayGoals"
-                  type="number"
-                  inputMode="numeric"
-                  min={0}
-                  defaultValue={match.predicted_away_goals ?? ""}
-                  disabled={locked}
-                  className="w-20"
-                  aria-label="Predicted away goals"
-                />
-              </label>
-              <Button type="submit" disabled={locked}>
-                {locked
-                  ? match.status === "FINISHED"
-                    ? "Finished"
-                    : isUnfetchedKnockoutMatch(match)
-                      ? "Awaiting teams"
-                      : "Locked"
-                  : "Save"}
-              </Button>
-            </Form>
-          </article>
-        );
-      })}
+      <MatchesDataTable matches={loaderData.matches} />
     </section>
   );
 }

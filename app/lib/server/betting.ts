@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { isMatchLockedForBetting } from "~/lib/match-betting";
 import type { AppDatabase } from "./db";
 
 export type ScoreReason = "EXACT" | "RESULT" | "MISS";
@@ -15,52 +16,11 @@ type MatchRow = {
   away_team: string | null;
 };
 
-export type MatchBettingState = {
-  kickoff_at: number;
-  stage: string;
-  group_code: string | null;
-  status: string;
-  home_team?: string | null;
-  away_team?: string | null;
-};
-
-const KNOCKOUT_STAGE_PATTERN =
-  /1\/\d+|round of \d+|quarter-?final|semi-?final|final/i;
-const QUALIFIER_STAGE_PATTERN = /^round \d+$/i;
-
-export function isUnfetchedKnockoutMatch(match: MatchBettingState) {
-  if (QUALIFIER_STAGE_PATTERN.test(match.stage.trim())) {
-    return false;
-  }
-
-  if (!KNOCKOUT_STAGE_PATTERN.test(match.stage)) {
-    return false;
-  }
-
-  const homeTeam = match.home_team?.trim();
-  const awayTeam = match.away_team?.trim();
-
-  if (!homeTeam || !awayTeam) {
-    return true;
-  }
-
-  return homeTeam === "TBD" || awayTeam === "TBD";
-}
-
-export function isMatchLockedForBetting(
-  match: MatchBettingState,
-  now: Date = new Date(),
-) {
-  if (isUnfetchedKnockoutMatch(match)) {
-    return true;
-  }
-
-  if (match.status === "FINISHED" || match.status === "LIVE") {
-    return true;
-  }
-
-  return now.getTime() >= match.kickoff_at;
-}
+export type { MatchBettingState } from "~/lib/match-betting";
+export {
+  isMatchLockedForBetting,
+  isUnfetchedKnockoutMatch,
+} from "~/lib/match-betting";
 
 type BetRow = {
   user_id: string;
