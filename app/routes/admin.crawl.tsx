@@ -72,7 +72,7 @@ export default function AdminCrawl() {
             <Input
               id="competitionName"
               name="competitionName"
-              defaultValue="World Cup"
+              defaultValue="World Cup 2026"
               autoComplete="off"
               required
             />
@@ -84,7 +84,8 @@ export default function AdminCrawl() {
               name="sourceUrl"
               type="url"
               inputMode="url"
-              placeholder="https://www.flashscore.com/football/world/world-cup/…"
+              defaultValue="https://www.flashscore.com/football/world/world-championship/"
+              placeholder="https://www.flashscore.com/football/world/world-championship/"
               autoComplete="off"
               required
             />

@@ -128,6 +128,21 @@ export function extractInitialFeedData(html: string, feedKey: string) {
   return html.match(regex)?.[1] ?? null;
 }
 
+export const WORLD_CUP_2026_FINALS_START_MS = Date.UTC(2026, 5, 10);
+export const WORLD_CUP_2026_FINALS_END_MS = Date.UTC(2026, 6, 20, 23, 59, 59);
+
+export function isWorldCup2026FinalsKickoff(unixTimeSeconds: number) {
+  const kickoffMs = unixTimeSeconds * 1000;
+  return (
+    kickoffMs >= WORLD_CUP_2026_FINALS_START_MS &&
+    kickoffMs <= WORLD_CUP_2026_FINALS_END_MS
+  );
+}
+
+export function filterWorldCup2026FinalsEvents(events: FlashscoreFeedEvent[]) {
+  return events.filter((event) => isWorldCup2026FinalsKickoff(event.unixTime));
+}
+
 export function extractSummaryFeeds(html: string): FlashscoreSummaryFeeds {
   const resultsFeed = extractInitialFeedData(html, "summary-results");
   const fixturesFeed = extractInitialFeedData(html, "summary-fixtures");
@@ -367,7 +382,10 @@ export async function crawlFlashscoreCompetition(
     );
     const page = await fetcher.fetchHtml(input.sourceUrl);
     const feeds = extractSummaryFeeds(page.html);
-    const events = [...feeds.results, ...feeds.fixtures];
+    const events = filterWorldCup2026FinalsEvents([
+      ...feeds.results,
+      ...feeds.fixtures,
+    ]);
     const seenTeams = new Set<string>();
     const seenMatches = new Set<string>();
 
@@ -385,6 +403,11 @@ export async function crawlFlashscoreCompetition(
         seenMatches.add(event.eventId);
       }
     }
+
+    db.query(
+      `DELETE FROM matches
+       WHERE kickoff_at < ? OR kickoff_at > ?`,
+    ).run(WORLD_CUP_2026_FINALS_START_MS, WORLD_CUP_2026_FINALS_END_MS);
 
     db.query(
       `UPDATE crawl_jobs
