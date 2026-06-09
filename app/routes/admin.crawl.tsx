@@ -9,7 +9,7 @@ import {
 import { Input } from "~/components/ui/input";
 import { requireAdmin } from "~/lib/server/admin";
 import { crawlFlashscoreCompetition } from "~/lib/server/crawl/flashscore";
-import { createAppDatabase, runMigrations } from "~/lib/server/db";
+import { withDatabase } from "~/lib/server/db";
 import type { Route } from "./+types/admin.crawl";
 
 type ActionResult = {
@@ -34,21 +34,19 @@ export async function action({ request }: Route.ActionArgs) {
     };
   }
 
-  const db = createAppDatabase();
-  runMigrations(db);
   try {
-    const result = await crawlFlashscoreCompetition(db, {
-      competitionName,
-      sourceUrl,
-      baseUrl,
-    });
+    const result = await withDatabase((db) =>
+      crawlFlashscoreCompetition(db, {
+        competitionName,
+        sourceUrl,
+        baseUrl,
+      }),
+    );
     return { result };
   } catch (error) {
     return {
       error: error instanceof Error ? error.message : "Crawl failed.",
     };
-  } finally {
-    db.close();
   }
 }
 

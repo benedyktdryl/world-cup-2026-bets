@@ -1,8 +1,9 @@
 import { Badge } from "~/components/ui/badge";
 import { MATCHES_ORDER_BY } from "~/lib/matches";
 import { getLeaderboard } from "~/lib/server/betting";
-import { createAppDatabase, runMigrations } from "~/lib/server/db";
+import { withDatabase } from "~/lib/server/db";
 import { requireSession } from "~/lib/server/session";
+import { sqlGet } from "~/lib/server/sql";
 import type { Route } from "./+types/app.dashboard";
 
 type CountRow = { total: number };
@@ -15,51 +16,50 @@ type NextMatchRow = {
 
 export async function loader({ request }: Route.LoaderArgs) {
   const session = await requireSession(request);
-  const db = createAppDatabase();
-  runMigrations(db);
 
-  try {
+  return withDatabase(async (db) => {
     const matches =
-      db.query<CountRow, []>("SELECT COUNT(*) AS total FROM matches").get()
+      (await sqlGet<CountRow>(db, "SELECT COUNT(*) AS total FROM matches"))
         ?.total ?? 0;
     const bets =
-      db
-        .query<CountRow, [string]>(
+      (
+        await sqlGet<CountRow>(
+          db,
           "SELECT COUNT(*) AS total FROM bets WHERE user_id = ?",
+          [session.user.id],
         )
-        .get(session.user.id)?.total ?? 0;
+      )?.total ?? 0;
     const exact =
-      db
-        .query<CountRow, [string]>(
+      (
+        await sqlGet<CountRow>(
+          db,
           "SELECT COUNT(*) AS total FROM scores WHERE user_id = ? AND reason = 'EXACT'",
+          [session.user.id],
         )
-        .get(session.user.id)?.total ?? 0;
-    const nextMatch = db
-      .query<NextMatchRow, []>(
-        `SELECT
-          matches.id,
-          matches.kickoff_at,
-          home.name AS home_team,
-          away.name AS away_team
-        FROM matches
-        LEFT JOIN teams home ON home.id = matches.home_team_id
-        LEFT JOIN teams away ON away.id = matches.away_team_id
-        WHERE matches.status = 'SCHEDULED'
-        ORDER BY ${MATCHES_ORDER_BY}
-        LIMIT 1`,
-      )
-      .get();
+      )?.total ?? 0;
+    const nextMatch = await sqlGet<NextMatchRow>(
+      db,
+      `SELECT
+        matches.id,
+        matches.kickoff_at,
+        home.name AS home_team,
+        away.name AS away_team
+      FROM matches
+      LEFT JOIN teams home ON home.id = matches.home_team_id
+      LEFT JOIN teams away ON away.id = matches.away_team_id
+      WHERE matches.status = 'SCHEDULED'
+      ORDER BY ${MATCHES_ORDER_BY}
+      LIMIT 1`,
+    );
 
     return {
       matches,
       bets,
       exact,
       nextMatch,
-      leaders: getLeaderboard(db).slice(0, 5),
+      leaders: (await getLeaderboard(db)).slice(0, 5),
     };
-  } finally {
-    db.close();
-  }
+  });
 }
 
 export default function Dashboard({ loaderData }: Route.ComponentProps) {

@@ -1,8 +1,9 @@
 import { Badge } from "~/components/ui/badge";
 import { Empty, EmptyContent, EmptyTitle } from "~/components/ui/empty";
 import { MATCHES_ORDER_BY } from "~/lib/matches";
-import { createAppDatabase, runMigrations } from "~/lib/server/db";
+import { withDatabase } from "~/lib/server/db";
 import { requireSession } from "~/lib/server/session";
+import { sqlAll } from "~/lib/server/sql";
 import type { Route } from "./+types/app.bracket";
 
 type BracketMatch = {
@@ -18,28 +19,25 @@ type BracketMatch = {
 
 export async function loader({ request }: Route.LoaderArgs) {
   await requireSession(request);
-  const db = createAppDatabase();
-  runMigrations(db);
 
-  try {
-    const matches = db
-      .query<BracketMatch, []>(
-        `SELECT
-          matches.id,
-          matches.stage,
-          matches.kickoff_at,
-          matches.home_goals,
-          matches.away_goals,
-          matches.status,
-          home.name AS home_team,
-          away.name AS away_team
-        FROM matches
-        LEFT JOIN teams home ON home.id = matches.home_team_id
-        LEFT JOIN teams away ON away.id = matches.away_team_id
-        WHERE matches.stage != 'GROUP'
-        ORDER BY ${MATCHES_ORDER_BY}`,
-      )
-      .all();
+  return withDatabase(async (db) => {
+    const matches = await sqlAll<BracketMatch>(
+      db,
+      `SELECT
+        matches.id,
+        matches.stage,
+        matches.kickoff_at,
+        matches.home_goals,
+        matches.away_goals,
+        matches.status,
+        home.name AS home_team,
+        away.name AS away_team
+      FROM matches
+      LEFT JOIN teams home ON home.id = matches.home_team_id
+      LEFT JOIN teams away ON away.id = matches.away_team_id
+      WHERE matches.stage != 'GROUP'
+      ORDER BY ${MATCHES_ORDER_BY}`,
+    );
 
     const rounds = new Map<string, BracketMatch[]>();
     for (const match of matches) {
@@ -49,9 +47,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     }
 
     return { rounds: [...rounds.entries()] };
-  } finally {
-    db.close();
-  }
+  });
 }
 
 export default function Bracket({ loaderData }: Route.ComponentProps) {

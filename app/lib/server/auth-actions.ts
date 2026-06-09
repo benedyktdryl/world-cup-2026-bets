@@ -1,7 +1,7 @@
 import { redirect } from "react-router";
 import { z } from "zod";
 import { auth } from "./auth";
-import { createAppDatabase, runMigrations } from "./db";
+import { createAppDatabase, ensureMigrations } from "./db";
 import { consumeInviteLink, validateInviteForEmail } from "./invites";
 
 const emailSchema = z.email().transform((value) => value.trim().toLowerCase());
@@ -77,33 +77,29 @@ export async function signUpFromInviteForm(formData: FormData) {
   }
 
   const db = createAppDatabase();
-  runMigrations(db);
+  await ensureMigrations(db);
 
-  try {
-    const invite = validateInviteForEmail(
-      db,
-      parsed.data.token,
-      parsed.data.email,
-    );
-    if (!invite.ok) {
-      return { error: inviteErrorMessage(invite.reason) };
-    }
-
-    const signup = await auth.api.signUpEmail({
-      body: {
-        email: parsed.data.email,
-        password: parsed.data.password,
-        name: parsed.data.name,
-      },
-    });
-
-    consumeInviteLink(db, parsed.data.token, {
-      email: parsed.data.email,
-      userId: signup.user.id,
-    });
-  } finally {
-    db.close();
+  const invite = await validateInviteForEmail(
+    db,
+    parsed.data.token,
+    parsed.data.email,
+  );
+  if (!invite.ok) {
+    return { error: inviteErrorMessage(invite.reason) };
   }
+
+  const signup = await auth.api.signUpEmail({
+    body: {
+      email: parsed.data.email,
+      password: parsed.data.password,
+      name: parsed.data.name,
+    },
+  });
+
+  await consumeInviteLink(db, parsed.data.token, {
+    email: parsed.data.email,
+    userId: signup.user.id,
+  });
 
   const response = await auth.api.signInEmail({
     body: {

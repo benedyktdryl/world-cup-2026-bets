@@ -38,7 +38,7 @@ export default function Home() {
                 <Link to="/login">Sign In</Link>
               </Button>
               <Button asChild size="lg" variant="outline">
-                <Link to="/admin/invites">Admin Invites</Link>
+                <Link to="/app/admin/invites">Admin Invites</Link>
               </Button>
             </div>
           </div>

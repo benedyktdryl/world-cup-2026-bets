@@ -3,8 +3,9 @@ import { MatchesDataTable } from "~/components/matches-data-table";
 import { Empty, EmptyContent, EmptyTitle } from "~/components/ui/empty";
 import { MATCHES_ORDER_BY } from "~/lib/matches";
 import { upsertBet } from "~/lib/server/betting";
-import { createAppDatabase, runMigrations } from "~/lib/server/db";
+import { withDatabase } from "~/lib/server/db";
 import { requireSession } from "~/lib/server/session";
+import { sqlAll } from "~/lib/server/sql";
 import type { Route } from "./+types/app.matches";
 
 type MatchRow = {
@@ -29,36 +30,32 @@ export function meta(_args: Route.MetaArgs) {
 
 export async function loader({ request }: Route.LoaderArgs) {
   const session = await requireSession(request);
-  const db = createAppDatabase();
-  runMigrations(db);
 
-  try {
-    const matches = db
-      .query<MatchRow, [string]>(
-        `SELECT
-          matches.id,
-          matches.kickoff_at,
-          matches.stage,
-          matches.group_code,
-          matches.status,
-          matches.home_goals,
-          matches.away_goals,
-          home.name AS home_team,
-          away.name AS away_team,
-          bets.predicted_home_goals,
-          bets.predicted_away_goals
-        FROM matches
-        LEFT JOIN teams home ON home.id = matches.home_team_id
-        LEFT JOIN teams away ON away.id = matches.away_team_id
-        LEFT JOIN bets
-          ON bets.match_id = matches.id AND bets.user_id = ?
-        ORDER BY ${MATCHES_ORDER_BY}`,
-      )
-      .all(session.user.id);
+  return withDatabase(async (db) => {
+    const matches = await sqlAll<MatchRow>(
+      db,
+      `SELECT
+        matches.id,
+        matches.kickoff_at,
+        matches.stage,
+        matches.group_code,
+        matches.status,
+        matches.home_goals,
+        matches.away_goals,
+        home.name AS home_team,
+        away.name AS away_team,
+        bets.predicted_home_goals,
+        bets.predicted_away_goals
+      FROM matches
+      LEFT JOIN teams home ON home.id = matches.home_team_id
+      LEFT JOIN teams away ON away.id = matches.away_team_id
+      LEFT JOIN bets
+        ON bets.match_id = matches.id AND bets.user_id = ?
+      ORDER BY ${MATCHES_ORDER_BY}`,
+      [session.user.id],
+    );
     return { matches };
-  } finally {
-    db.close();
-  }
+  });
 }
 
 export async function action({ request }: Route.ActionArgs) {
@@ -78,25 +75,23 @@ export async function action({ request }: Route.ActionArgs) {
     return { error: "Enter valid non-negative scores." };
   }
 
-  const db = createAppDatabase();
-  runMigrations(db);
   try {
-    upsertBet(db, {
-      userId: session.user.id,
-      matchId,
-      predictedHomeGoals,
-      predictedAwayGoals,
-    });
+    await withDatabase((db) =>
+      upsertBet(db, {
+        userId: session.user.id,
+        matchId,
+        predictedHomeGoals,
+        predictedAwayGoals,
+      }),
+    );
     return { ok: true };
   } catch (error) {
     return {
       error:
         error instanceof Error && error.message === "MATCH_LOCKED"
-          ? "This match has already kicked off."
+          ? "Bets close 12 hours before kickoff."
           : "Could not save this bet.",
     };
-  } finally {
-    db.close();
   }
 }
 
@@ -109,7 +104,7 @@ export default function Matches({ loaderData }: Route.ComponentProps) {
         <EmptyContent>
           <EmptyTitle>No Matches Yet</EmptyTitle>
           <p className="text-muted-foreground">
-            Ask an admin to crawl Flashscore or add fixtures.
+            Run the admin crawl to import World Cup fixtures.
           </p>
         </EmptyContent>
       </Empty>
@@ -118,13 +113,6 @@ export default function Matches({ loaderData }: Route.ComponentProps) {
 
   return (
     <section className="flex flex-col gap-4">
-      <div className="flex flex-col gap-1">
-        <h1 className="font-semibold text-3xl tracking-tight">Matches</h1>
-        <p className="text-muted-foreground text-sm">
-          Predict scores before kickoff. Exact scores earn 3 points, correct
-          result earns 1.
-        </p>
-      </div>
       {actionData?.error ? (
         <p aria-live="polite" className="text-destructive text-sm">
           {actionData.error}

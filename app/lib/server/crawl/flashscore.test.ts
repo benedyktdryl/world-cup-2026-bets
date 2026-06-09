@@ -2,7 +2,13 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type AppDatabase, createAppDatabase, runMigrations } from "../db";
+import {
+  closeAppDatabase,
+  type AppDatabase,
+  createAppDatabase,
+  runMigrations,
+} from "../db";
+import { sqlGet } from "../sql";
 import {
   crawlFlashscoreCompetition,
   extractSummaryFeeds,
@@ -30,11 +36,11 @@ cjs.initialFeeds["summary-fixtures"] = { data: \`${sampleFixturesFeed}\`, allEve
 
 const tempDirs: string[] = [];
 
-function createTestDatabase(): AppDatabase {
+async function createTestDatabase(): Promise<AppDatabase> {
   const dir = mkdtempSync(join(tmpdir(), "world-cup-crawl-"));
   tempDirs.push(dir);
   const db = createAppDatabase(join(dir, "test.sqlite"));
-  runMigrations(db);
+  await runMigrations(db);
   return db;
 }
 
@@ -93,7 +99,7 @@ describe("flashscore feed parsing", () => {
   });
 
   test("crawlFlashscoreCompetition upserts teams, matches, cache, and job state", async () => {
-    const db = createTestDatabase();
+    const db = await createTestDatabase();
     const urls = new Map([
       [
         "https://www.flashscore.com/football/world/world-championship/",
@@ -122,26 +128,27 @@ describe("flashscore feed parsing", () => {
     });
 
     expect(
-      db
-        .query<{ total: number }, []>("SELECT COUNT(*) AS total FROM teams")
-        .get()?.total,
+      (await sqlGet<{ total: number }>(
+        db,
+        "SELECT COUNT(*) AS total FROM teams",
+      ))?.total,
     ).toBe(4);
     expect(
-      db
-        .query<{ total: number }, []>("SELECT COUNT(*) AS total FROM matches")
-        .get()?.total,
+      (await sqlGet<{ total: number }>(
+        db,
+        "SELECT COUNT(*) AS total FROM matches",
+      ))?.total,
     ).toBe(2);
     expect(
-      db
-        .query<{ total: number }, []>(
-          "SELECT COUNT(*) AS total FROM scraped_pages",
-        )
-        .get()?.total,
+      (await sqlGet<{ total: number }>(
+        db,
+        "SELECT COUNT(*) AS total FROM scraped_pages",
+      ))?.total,
     ).toBe(1);
     expect(
-      db.query<{ status: string }, []>("SELECT status FROM crawl_jobs").get(),
+      await sqlGet<{ status: string }>(db, "SELECT status FROM crawl_jobs"),
     ).toEqual({ status: "SUCCEEDED" });
 
-    db.close();
+    closeAppDatabase(db);
   });
 });

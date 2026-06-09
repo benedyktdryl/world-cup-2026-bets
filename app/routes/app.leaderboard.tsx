@@ -9,20 +9,16 @@ import {
   TableRow,
 } from "~/components/ui/table";
 import { getLeaderboard } from "~/lib/server/betting";
-import { createAppDatabase, runMigrations } from "~/lib/server/db";
+import { withDatabase } from "~/lib/server/db";
 import { requireSession } from "~/lib/server/session";
 import type { Route } from "./+types/app.leaderboard";
 
 export async function loader({ request }: Route.LoaderArgs) {
   await requireSession(request);
-  const db = createAppDatabase();
-  runMigrations(db);
 
-  try {
-    return { leaderboard: getLeaderboard(db) };
-  } finally {
-    db.close();
-  }
+  return withDatabase(async (db) => ({
+    leaderboard: await getLeaderboard(db),
+  }));
 }
 
 export default function Leaderboard({ loaderData }: Route.ComponentProps) {

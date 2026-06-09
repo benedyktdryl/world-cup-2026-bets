@@ -1,5 +1,6 @@
 import { redirect } from "react-router";
-import { createAppDatabase, runMigrations } from "./db";
+import { createAppDatabase, ensureMigrations } from "./db";
+import { sqlGet } from "./sql";
 import { requireSession } from "./session";
 
 type ProfileRoleRow = {
@@ -9,23 +10,19 @@ type ProfileRoleRow = {
 export async function requireAdmin(request: Request) {
   const session = await requireSession(request);
   const db = createAppDatabase();
-  runMigrations(db);
+  await ensureMigrations(db);
 
-  try {
-    const profile = db
-      .query<ProfileRoleRow, [string]>(
-        `SELECT role
-         FROM profiles
-         WHERE user_id = ?`,
-      )
-      .get(session.user.id);
+  const profile = await sqlGet<ProfileRoleRow>(
+    db,
+    `SELECT role
+     FROM profiles
+     WHERE user_id = ?`,
+    [session.user.id],
+  );
 
-    if (profile?.role !== "ADMIN") {
-      throw redirect("/app");
-    }
-
-    return session;
-  } finally {
-    db.close();
+  if (profile?.role !== "ADMIN") {
+    throw redirect("/app");
   }
+
+  return session;
 }

@@ -1,4 +1,5 @@
 import {
+  closeAppDatabase,
   createAppDatabase,
   getDatabasePath,
   runMigrations,
@@ -7,8 +8,8 @@ import {
 const db = createAppDatabase();
 
 try {
-  runMigrations(db);
-  console.log(`Migrated SQLite database at ${getDatabasePath()}`);
+  await runMigrations(db);
+  console.log(`Migrated database at ${getDatabasePath()}`);
 } finally {
-  db.close();
+  closeAppDatabase(db);
 }

@@ -1,26 +1,72 @@
-import { Database } from "bun:sqlite";
+import { createClient, type Client } from "@libsql/client";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
+import { drizzle } from "drizzle-orm/libsql";
+import { env } from "./env";
+import { sqlExec } from "./sql";
 
-export type AppDatabase = Database;
+export type AppDatabase = Client;
 
-export function getDatabasePath() {
-  return Bun.env.DB_PATH?.trim() || "./data/world-cup-bets.sqlite";
-}
+let sharedDatabase: Client | undefined;
+let migrationsPromise: Promise<void> | undefined;
 
-export function createAppDatabase(path = getDatabasePath()): AppDatabase {
-  if (path !== ":memory:") {
-    mkdirSync(dirname(path), { recursive: true });
+function toLibsqlUrl(path: string) {
+  if (path === ":memory:") {
+    return ":memory:";
   }
 
-  const db = new Database(path);
-  db.exec("PRAGMA journal_mode = WAL;");
-  db.exec("PRAGMA foreign_keys = ON;");
-  return db;
+  return path.startsWith("file:") ? path : `file:${path}`;
 }
 
-export function runMigrations(db: AppDatabase) {
-  db.exec(`
+export function getDatabasePath() {
+  return env("DB_PATH", "./data/world-cup-bets.sqlite");
+}
+
+export function getDatabaseUrl(path = getDatabasePath()) {
+  const tursoUrl = env("TURSO_DATABASE_URL");
+  if (tursoUrl) {
+    return tursoUrl;
+  }
+
+  return toLibsqlUrl(path);
+}
+
+export function createAppDatabase(path?: string): AppDatabase {
+  if (path) {
+    return createClient({
+      url: getDatabaseUrl(path),
+    });
+  }
+
+  if (!sharedDatabase) {
+    const url = getDatabaseUrl();
+    if (!url.startsWith("libsql:") && url !== ":memory:") {
+      mkdirSync(dirname(getDatabasePath()), { recursive: true });
+    }
+
+    sharedDatabase = createClient({
+      url,
+      authToken: env("TURSO_AUTH_TOKEN") || undefined,
+    });
+  }
+
+  return sharedDatabase;
+}
+
+export function getDrizzleDb(db: AppDatabase = createAppDatabase()) {
+  return drizzle(db);
+}
+
+export function closeAppDatabase(db: AppDatabase) {
+  if (db !== sharedDatabase) {
+    db.close();
+  }
+}
+
+export async function runMigrations(db: AppDatabase) {
+  await sqlExec(
+    db,
+    `
     CREATE TABLE IF NOT EXISTS user (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -184,5 +230,23 @@ export function runMigrations(db: AppDatabase) {
       started_at INTEGER NOT NULL,
       finished_at INTEGER
     );
-  `);
+  `,
+  );
+}
+
+export async function ensureMigrations(db: AppDatabase = createAppDatabase()) {
+  if (!migrationsPromise) {
+    migrationsPromise = runMigrations(db);
+  }
+
+  await migrationsPromise;
+}
+
+export async function withDatabase<T>(
+  fn: (db: AppDatabase) => Promise<T>,
+  path?: string,
+): Promise<T> {
+  const db = createAppDatabase(path);
+  await ensureMigrations(db);
+  return fn(db);
 }

@@ -8,44 +8,40 @@ import {
   TableHeader,
   TableRow,
 } from "~/components/ui/table";
-import { createAppDatabase, runMigrations } from "~/lib/server/db";
+import { withDatabase } from "~/lib/server/db";
 import { requireSession } from "~/lib/server/session";
 import {
   buildGroupStandings,
   type FinishedGroupMatch,
 } from "~/lib/server/standings";
+import { sqlAll } from "~/lib/server/sql";
 import type { Route } from "./+types/app.groups";
 
 export async function loader({ request }: Route.LoaderArgs) {
   await requireSession(request);
-  const db = createAppDatabase();
-  runMigrations(db);
 
-  try {
-    const matches = db
-      .query<FinishedGroupMatch, []>(
-        `SELECT
-          matches.group_code AS groupCode,
-          matches.home_team_id AS homeTeamId,
-          home.name AS homeTeamName,
-          matches.away_team_id AS awayTeamId,
-          away.name AS awayTeamName,
-          matches.home_goals AS homeGoals,
-          matches.away_goals AS awayGoals
-        FROM matches
-        JOIN teams home ON home.id = matches.home_team_id
-        JOIN teams away ON away.id = matches.away_team_id
-        WHERE matches.status = 'FINISHED'
-          AND matches.stage = 'GROUP'
-          AND matches.group_code IS NOT NULL
-          AND matches.home_goals IS NOT NULL
-          AND matches.away_goals IS NOT NULL`,
-      )
-      .all();
+  return withDatabase(async (db) => {
+    const matches = await sqlAll<FinishedGroupMatch>(
+      db,
+      `SELECT
+        matches.group_code AS groupCode,
+        matches.home_team_id AS homeTeamId,
+        home.name AS homeTeamName,
+        matches.away_team_id AS awayTeamId,
+        away.name AS awayTeamName,
+        matches.home_goals AS homeGoals,
+        matches.away_goals AS awayGoals
+      FROM matches
+      JOIN teams home ON home.id = matches.home_team_id
+      JOIN teams away ON away.id = matches.away_team_id
+      WHERE matches.status = 'FINISHED'
+        AND matches.stage = 'GROUP'
+        AND matches.group_code IS NOT NULL
+        AND matches.home_goals IS NOT NULL
+        AND matches.away_goals IS NOT NULL`,
+    );
     return { groups: buildGroupStandings(matches) };
-  } finally {
-    db.close();
-  }
+  });
 }
 
 export default function Groups({ loaderData }: Route.ComponentProps) {

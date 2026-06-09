@@ -2,7 +2,10 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { isMatchLockedForBetting } from "~/lib/match-betting";
+import {
+  BETTING_CLOSE_WINDOW_MS,
+  isMatchLockedForBetting,
+} from "~/lib/match-betting";
 import {
   getLeaderboard,
   recalculateScores,
@@ -10,37 +13,43 @@ import {
   settleMatch,
   upsertBet,
 } from "./betting";
-import { type AppDatabase, createAppDatabase, runMigrations } from "./db";
+import {
+  closeAppDatabase,
+  type AppDatabase,
+  createAppDatabase,
+  runMigrations,
+} from "./db";
+import { sqlRun } from "./sql";
 
 const tempDirs: string[] = [];
 
-function createTestDatabase(): AppDatabase {
-  const dir = mkdtempSync(join(tmpdir(), "world-cup-betting-"));
-  tempDirs.push(dir);
-  const db = createAppDatabase(join(dir, "test.sqlite"));
-  runMigrations(db);
-  seedContest(db);
-  return db;
-}
-
-function seedContest(db: AppDatabase) {
-  db.query(
+async function seedContest(db: AppDatabase) {
+  await sqlRun(
+    db,
     `INSERT INTO profiles (user_id, email, display_name, role)
      VALUES (?, ?, ?, ?)`,
-  ).run("user_ada", "ada@example.com", "Ada", "USER");
-  db.query(
+    ["user_ada", "ada@example.com", "Ada", "USER"],
+  );
+  await sqlRun(
+    db,
     `INSERT INTO profiles (user_id, email, display_name, role)
      VALUES (?, ?, ?, ?)`,
-  ).run("user_max", "max@example.com", "Max", "USER");
-  db.query(
+    ["user_max", "max@example.com", "Max", "USER"],
+  );
+  await sqlRun(
+    db,
     `INSERT INTO teams (id, source_id, name, group_code)
      VALUES (?, ?, ?, ?)`,
-  ).run("team_poland", "fs_poland", "Poland", "A");
-  db.query(
+    ["team_poland", "fs_poland", "Poland", "A"],
+  );
+  await sqlRun(
+    db,
     `INSERT INTO teams (id, source_id, name, group_code)
      VALUES (?, ?, ?, ?)`,
-  ).run("team_germany", "fs_germany", "Germany", "A");
-  db.query(
+    ["team_germany", "fs_germany", "Germany", "A"],
+  );
+  await sqlRun(
+    db,
     `INSERT INTO matches (
       id,
       source_id,
@@ -51,16 +60,26 @@ function seedContest(db: AppDatabase) {
       away_team_id,
       status
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).run(
-    "match_1",
-    "fs_match_1",
-    "GROUP",
-    "A",
-    new Date("2026-06-01T20:00:00.000Z").getTime(),
-    "team_poland",
-    "team_germany",
-    "SCHEDULED",
+    [
+      "match_1",
+      "fs_match_1",
+      "GROUP",
+      "A",
+      new Date("2026-06-01T20:00:00.000Z").getTime(),
+      "team_poland",
+      "team_germany",
+      "SCHEDULED",
+    ],
   );
+}
+
+async function createTestDatabase(): Promise<AppDatabase> {
+  const dir = mkdtempSync(join(tmpdir(), "world-cup-betting-"));
+  tempDirs.push(dir);
+  const db = createAppDatabase(join(dir, "test.sqlite"));
+  await runMigrations(db);
+  await seedContest(db);
+  return db;
 }
 
 afterEach(() => {
@@ -99,10 +118,10 @@ describe("simple scoring", () => {
     ).toEqual({ points: 0, reason: "MISS" });
   });
 
-  test("keeps scheduled tournament fixtures open before kickoff", () => {
+  test("keeps scheduled tournament fixtures open more than 12 hours before kickoff", () => {
     expect(
       isMatchLockedForBetting({
-        kickoff_at: Date.now() + 60_000,
+        kickoff_at: Date.now() + BETTING_CLOSE_WINDOW_MS + 60_000,
         stage: "Round 1",
         group_code: "Round 1",
         status: "SCHEDULED",
@@ -115,7 +134,7 @@ describe("simple scoring", () => {
   test("locks knockout fixtures that have not been fetched yet", () => {
     expect(
       isMatchLockedForBetting({
-        kickoff_at: Date.now() + 60_000,
+        kickoff_at: Date.now() + BETTING_CLOSE_WINDOW_MS + 60_000,
         stage: "1/8",
         group_code: null,
         status: "SCHEDULED",
@@ -125,56 +144,56 @@ describe("simple scoring", () => {
     ).toBe(true);
   });
 
-  test("prevents editing a bet once kickoff has passed", () => {
-    const db = createTestDatabase();
+  test("prevents editing a bet within 12 hours of kickoff", async () => {
+    const db = await createTestDatabase();
 
-    upsertBet(db, {
+    await upsertBet(db, {
       userId: "user_ada",
       matchId: "match_1",
       predictedHomeGoals: 2,
       predictedAwayGoals: 1,
-      now: new Date("2026-06-01T19:59:00.000Z"),
+      now: new Date("2026-06-01T07:59:00.000Z"),
     });
 
-    expect(() =>
+    await expect(
       upsertBet(db, {
         userId: "user_ada",
         matchId: "match_1",
         predictedHomeGoals: 3,
         predictedAwayGoals: 1,
-        now: new Date("2026-06-01T20:00:00.000Z"),
+        now: new Date("2026-06-01T08:00:00.000Z"),
       }),
-    ).toThrow("MATCH_LOCKED");
+    ).rejects.toThrow("MATCH_LOCKED");
 
-    db.close();
+    closeAppDatabase(db);
   });
 
-  test("recalculates scores and orders leaderboard by points", () => {
-    const db = createTestDatabase();
+  test("recalculates scores and orders leaderboard by points", async () => {
+    const db = await createTestDatabase();
 
-    upsertBet(db, {
+    await upsertBet(db, {
       userId: "user_ada",
       matchId: "match_1",
       predictedHomeGoals: 2,
       predictedAwayGoals: 1,
-      now: new Date("2026-06-01T19:00:00.000Z"),
+      now: new Date("2026-06-01T07:00:00.000Z"),
     });
-    upsertBet(db, {
+    await upsertBet(db, {
       userId: "user_max",
       matchId: "match_1",
       predictedHomeGoals: 1,
       predictedAwayGoals: 0,
-      now: new Date("2026-06-01T19:00:00.000Z"),
+      now: new Date("2026-06-01T07:00:00.000Z"),
     });
 
-    settleMatch(db, {
+    await settleMatch(db, {
       matchId: "match_1",
       homeGoals: 2,
       awayGoals: 1,
     });
-    recalculateScores(db, "match_1");
+    await recalculateScores(db, "match_1");
 
-    expect(getLeaderboard(db)).toEqual([
+    expect(await getLeaderboard(db)).toEqual([
       {
         userId: "user_ada",
         displayName: "Ada",
@@ -193,6 +212,6 @@ describe("simple scoring", () => {
       },
     ]);
 
-    db.close();
+    closeAppDatabase(db);
   });
 });

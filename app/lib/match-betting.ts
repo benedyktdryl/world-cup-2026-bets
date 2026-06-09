@@ -7,6 +7,8 @@ export type MatchBettingState = {
   away_team?: string | null;
 };
 
+export const BETTING_CLOSE_WINDOW_MS = 12 * 60 * 60 * 1000;
+
 const KNOCKOUT_STAGE_PATTERN =
   /1\/\d+|round of \d+|quarter-?final|semi-?final|final/i;
 const QUALIFIER_STAGE_PATTERN = /^round \d+$/i;
@@ -30,6 +32,10 @@ export function isUnfetchedKnockoutMatch(match: MatchBettingState) {
   return homeTeam === "TBD" || awayTeam === "TBD";
 }
 
+export function getBettingCloseAt(kickoffAt: number) {
+  return kickoffAt - BETTING_CLOSE_WINDOW_MS;
+}
+
 export function isMatchLockedForBetting(
   match: MatchBettingState,
   now: Date = new Date(),
@@ -42,5 +48,5 @@ export function isMatchLockedForBetting(
     return true;
   }
 
-  return now.getTime() >= match.kickoff_at;
+  return now.getTime() >= getBettingCloseAt(match.kickoff_at);
 }

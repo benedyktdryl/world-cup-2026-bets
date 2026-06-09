@@ -1,9 +1,13 @@
+import { drizzleAdapter } from "@better-auth/drizzle-adapter";
 import { betterAuth } from "better-auth";
-import { createAppDatabase, runMigrations } from "./db";
+import { authSchema } from "./auth-schema";
+import { createAppDatabase, ensureMigrations, getDrizzleDb } from "./db";
+import { env } from "./env";
 import { ensureProfileForUser, parseAdminEmails } from "./invites";
 
 const authDb = createAppDatabase();
-runMigrations(authDb);
+const drizzleDb = getDrizzleDb(authDb);
+const migrationsReady = ensureMigrations(authDb);
 
 function splitEnvList(value = "") {
   return value
@@ -14,20 +18,24 @@ function splitEnvList(value = "") {
 
 export const auth = betterAuth({
   appName: "World Cup Bets",
-  baseURL: Bun.env.BETTER_AUTH_URL || "http://localhost:5173",
+  baseURL: env("BETTER_AUTH_URL", "http://localhost:5173"),
   secret:
-    Bun.env.BETTER_AUTH_SECRET ||
+    env("BETTER_AUTH_SECRET") ||
     "development-secret-change-before-production-000000",
-  database: authDb,
+  database: drizzleAdapter(drizzleDb, {
+    provider: "sqlite",
+    schema: authSchema,
+  }),
   emailAndPassword: {
     enabled: true,
   },
-  trustedOrigins: splitEnvList(Bun.env.TRUSTED_ORIGINS),
+  trustedOrigins: splitEnvList(env("TRUSTED_ORIGINS")),
   databaseHooks: {
     user: {
       create: {
         after: async (user) => {
-          ensureProfileForUser(authDb, {
+          await migrationsReady;
+          await ensureProfileForUser(authDb, {
             userId: user.id,
             email: user.email,
             name: user.name,
@@ -37,7 +45,8 @@ export const auth = betterAuth({
       },
       update: {
         after: async (user) => {
-          ensureProfileForUser(authDb, {
+          await migrationsReady;
+          await ensureProfileForUser(authDb, {
             userId: user.id,
             email: user.email,
             name: user.name,

@@ -3,10 +3,11 @@ import {
   Grid3x3,
   LayoutDashboard,
   Medal,
+  Radar,
   Shield,
   Trophy,
 } from "lucide-react";
-import { Link, NavLink } from "react-router";
+import { NavLink } from "react-router";
 import {
   Sidebar,
   SidebarContent,
@@ -18,7 +19,6 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  SidebarRail,
 } from "~/components/ui/sidebar";
 
 const navItems = [
@@ -50,9 +50,22 @@ const navItems = [
   },
 ] as const;
 
+const adminItems = [
+  {
+    title: "Invites",
+    url: "/app/admin/invites",
+    icon: Shield,
+  },
+  {
+    title: "Crawl",
+    url: "/app/admin/crawl",
+    icon: Radar,
+  },
+] as const;
+
 export function AppSidebar({ userName }: { userName: string }) {
   return (
-    <Sidebar collapsible="icon" variant="inset">
+    <Sidebar collapsible="none" variant="inset">
       <SidebarHeader>
         <div className="flex flex-col gap-1 px-2 py-1">
           <span className="font-semibold text-base tracking-tight">
@@ -70,7 +83,7 @@ export function AppSidebar({ userName }: { userName: string }) {
             <SidebarMenu>
               {navItems.map((item) => (
                 <SidebarMenuItem key={item.url}>
-                  <SidebarMenuButton asChild tooltip={item.title}>
+                  <SidebarMenuButton asChild isActive={false}>
                     <NavLink
                       to={item.url}
                       end={"end" in item ? item.end : false}
@@ -84,20 +97,25 @@ export function AppSidebar({ userName }: { userName: string }) {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+        <SidebarGroup>
+          <SidebarGroupLabel>Admin</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {adminItems.map((item) => (
+                <SidebarMenuItem key={item.url}>
+                  <SidebarMenuButton asChild>
+                    <NavLink to={item.url}>
+                      <item.icon />
+                      <span>{item.title}</span>
+                    </NavLink>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
       </SidebarContent>
-      <SidebarFooter>
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton asChild tooltip="Admin">
-              <Link to="/admin/invites">
-                <Shield />
-                <span>Admin</span>
-              </Link>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
-      </SidebarFooter>
-      <SidebarRail />
+      <SidebarFooter />
     </Sidebar>
   );
 }

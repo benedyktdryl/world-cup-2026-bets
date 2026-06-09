@@ -1,16 +1,18 @@
 import { existsSync } from "node:fs";
 import { join, normalize } from "node:path";
 import { createRequestHandler } from "react-router";
+import { startDailyCrawlScheduler } from "../app/lib/server/crawl/daily-crawl";
+import { env } from "../app/lib/server/env";
 
 // Build output is created by `react-router build` before this script runs.
 // @ts-expect-error build/server is generated, not source-controlled.
 const build = await import("../build/server/index.js");
 
-const mode = Bun.env.NODE_ENV || "production";
+const mode = env("NODE_ENV", "production");
 const handler = createRequestHandler(build, mode);
 const clientRoot = normalize(join(import.meta.dir, "..", "build", "client"));
-const port = Number(Bun.env.PORT || "3000");
-const hostname = Bun.env.HOST || "0.0.0.0";
+const port = Number(env("PORT", "3000"));
+const hostname = env("HOST", "0.0.0.0");
 
 const contentTypes = new Map([
   [".css", "text/css; charset=utf-8"],
@@ -57,3 +59,7 @@ Bun.serve({
 });
 
 console.log(`World Cup Bets listening on http://${hostname}:${port}`);
+
+if (!env("VERCEL")) {
+  startDailyCrawlScheduler();
+}

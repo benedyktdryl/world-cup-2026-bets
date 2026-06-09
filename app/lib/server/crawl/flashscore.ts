@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { AppDatabase } from "../db";
+import { env } from "../env";
+import { sqlAll, sqlGet, sqlRun } from "../sql";
 
 export type FlashscoreFeedEvent = {
   eventId: string;
@@ -154,7 +156,7 @@ export function extractSummaryFeeds(html: string): FlashscoreSummaryFeeds {
 }
 
 export function getScraperUserAgent() {
-  const contactUrl = Bun.env.SCRAPER_CONTACT_URL?.trim();
+  const contactUrl = env("SCRAPER_CONTACT_URL").trim();
   if (contactUrl) {
     return `world-cup-bets/0.1 (+${contactUrl}; respects robots and ToS)`;
   }
@@ -179,13 +181,13 @@ class CachedRateLimitedFetcher {
   }
 
   async fetchHtml(url: string) {
-    const cached = this.db
-      .query<ScrapedPageRow, [string]>(
-        `SELECT url, fetched_at, html
-         FROM scraped_pages
-         WHERE url = ?`,
-      )
-      .get(url);
+    const cached = await sqlGet<ScrapedPageRow>(
+      this.db,
+      `SELECT url, fetched_at, html
+       FROM scraped_pages
+       WHERE url = ?`,
+      [url],
+    );
 
     if (cached && Date.now() - cached.fetched_at <= this.options.cacheTtlMs) {
       return { html: cached.html, fromCache: true };
@@ -214,23 +216,23 @@ class CachedRateLimitedFetcher {
         }
 
         const html = await response.text();
-        this.db
-          .query(
-            `INSERT INTO scraped_pages (url, fetched_at, html, etag, last_modified)
-             VALUES (?, ?, ?, ?, ?)
-             ON CONFLICT(url) DO UPDATE SET
-               fetched_at = excluded.fetched_at,
-               html = excluded.html,
-               etag = excluded.etag,
-               last_modified = excluded.last_modified`,
-          )
-          .run(
+        await sqlRun(
+          this.db,
+          `INSERT INTO scraped_pages (url, fetched_at, html, etag, last_modified)
+           VALUES (?, ?, ?, ?, ?)
+           ON CONFLICT(url) DO UPDATE SET
+             fetched_at = excluded.fetched_at,
+             html = excluded.html,
+             etag = excluded.etag,
+             last_modified = excluded.last_modified`,
+          [
             url,
             Date.now(),
             html,
             response.headers.get("etag"),
             response.headers.get("last-modified"),
-          );
+          ],
+        );
 
         return { html, fromCache: false };
       } catch (error) {
@@ -263,13 +265,14 @@ function absoluteUrl(baseUrl: string, maybeRelative: string) {
   return new URL(maybeRelative, baseUrl).toString();
 }
 
-function upsertTeam(
+async function upsertTeam(
   db: AppDatabase,
   sourceId: string,
   name: string,
   group?: string,
 ) {
-  db.query(
+  await sqlRun(
+    db,
     `INSERT INTO teams (id, source_id, name, group_code, updated_at)
      VALUES (?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
@@ -277,10 +280,11 @@ function upsertTeam(
        name = excluded.name,
        group_code = COALESCE(excluded.group_code, teams.group_code),
        updated_at = excluded.updated_at`,
-  ).run(teamId(sourceId), sourceId, name, group ?? null, Date.now());
+    [teamId(sourceId), sourceId, name, group ?? null, Date.now()],
+  );
 }
 
-function upsertMatch(
+async function upsertMatch(
   db: AppDatabase,
   input: {
     competitionId: string;
@@ -297,7 +301,8 @@ function upsertMatch(
     `/match/${input.event.eventId}/`,
   );
 
-  db.query(
+  await sqlRun(
+    db,
     `INSERT INTO matches (
       id,
       source_id,
@@ -325,20 +330,21 @@ function upsertMatch(
       status = excluded.status,
       source_url = excluded.source_url,
       updated_at = excluded.updated_at`,
-  ).run(
-    matchId(input.event.eventId),
-    input.event.eventId,
-    input.competitionId,
-    input.event.round ?? "Tournament",
-    input.event.round ?? null,
-    input.event.unixTime * 1000,
-    teamId(input.event.homeTeamId),
-    teamId(input.event.awayTeamId),
-    input.event.homeGoals ?? null,
-    input.event.awayGoals ?? null,
-    status,
-    sourceUrl,
-    Date.now(),
+    [
+      matchId(input.event.eventId),
+      input.event.eventId,
+      input.competitionId,
+      input.event.round ?? "Tournament",
+      input.event.round ?? null,
+      input.event.unixTime * 1000,
+      teamId(input.event.homeTeamId),
+      teamId(input.event.awayTeamId),
+      input.event.homeGoals ?? null,
+      input.event.awayGoals ?? null,
+      status,
+      sourceUrl,
+      Date.now(),
+    ],
   );
 }
 
@@ -355,22 +361,26 @@ export async function crawlFlashscoreCompetition(
 ) {
   const jobId = randomUUID();
   const startedAt = Date.now();
-  db.query(
+  await sqlRun(
+    db,
     `INSERT INTO crawl_jobs (id, source_url, status, started_at)
      VALUES (?, ?, 'RUNNING', ?)`,
-  ).run(jobId, input.sourceUrl, startedAt);
+    [jobId, input.sourceUrl, startedAt],
+  );
 
   try {
     const competitionId = `competition_${input.competitionName
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "_")}`;
-    db.query(
+    await sqlRun(
+      db,
       `INSERT INTO competitions (id, name, source_url, updated_at)
        VALUES (?, ?, ?, ?)
        ON CONFLICT(source_url) DO UPDATE SET
          name = excluded.name,
          updated_at = excluded.updated_at`,
-    ).run(competitionId, input.competitionName, input.sourceUrl, Date.now());
+      [competitionId, input.competitionName, input.sourceUrl, Date.now()],
+    );
 
     const fetcher = new CachedRateLimitedFetcher(
       db,
@@ -391,32 +401,40 @@ export async function crawlFlashscoreCompetition(
 
     for (const event of events) {
       if (!seenTeams.has(event.homeTeamId)) {
-        upsertTeam(db, event.homeTeamId, event.homeTeamName, event.round);
+        await upsertTeam(db, event.homeTeamId, event.homeTeamName, event.round);
         seenTeams.add(event.homeTeamId);
       }
       if (!seenTeams.has(event.awayTeamId)) {
-        upsertTeam(db, event.awayTeamId, event.awayTeamName, event.round);
+        await upsertTeam(db, event.awayTeamId, event.awayTeamName, event.round);
         seenTeams.add(event.awayTeamId);
       }
       if (!seenMatches.has(event.eventId)) {
-        upsertMatch(db, { competitionId, event, baseUrl: input.baseUrl });
+        await upsertMatch(db, {
+          competitionId,
+          event,
+          baseUrl: input.baseUrl,
+        });
         seenMatches.add(event.eventId);
       }
     }
 
-    db.query(
+    await sqlRun(
+      db,
       `DELETE FROM matches
        WHERE kickoff_at < ? OR kickoff_at > ?`,
-    ).run(WORLD_CUP_2026_FINALS_START_MS, WORLD_CUP_2026_FINALS_END_MS);
+      [WORLD_CUP_2026_FINALS_START_MS, WORLD_CUP_2026_FINALS_END_MS],
+    );
 
-    db.query(
+    await sqlRun(
+      db,
       `UPDATE crawl_jobs
        SET status = 'SUCCEEDED',
          teams_count = ?,
          matches_count = ?,
          finished_at = ?
        WHERE id = ?`,
-    ).run(seenTeams.size, seenMatches.size, Date.now(), jobId);
+      [seenTeams.size, seenMatches.size, Date.now(), jobId],
+    );
 
     return {
       teams: seenTeams.size,
@@ -424,16 +442,18 @@ export async function crawlFlashscoreCompetition(
       jobStatus: "SUCCEEDED" as const,
     };
   } catch (error) {
-    db.query(
+    await sqlRun(
+      db,
       `UPDATE crawl_jobs
        SET status = 'FAILED',
          error = ?,
          finished_at = ?
        WHERE id = ?`,
-    ).run(
-      error instanceof Error ? error.message : "Unknown crawl error",
-      Date.now(),
-      jobId,
+      [
+        error instanceof Error ? error.message : "Unknown crawl error",
+        Date.now(),
+        jobId,
+      ],
     );
     throw error;
   }

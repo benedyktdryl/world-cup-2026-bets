@@ -1,5 +1,7 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type { AppDatabase } from "./db";
+import { env } from "./env";
+import { sqlAll, sqlGet, sqlRun, sqlTransaction } from "./sql";
 
 type InviteLinkRow = {
   id: string;
@@ -50,17 +52,17 @@ function hashInviteToken(rawToken: string) {
   return createHash("sha256").update(rawToken).digest("hex");
 }
 
-function getInviteByRawToken(db: AppDatabase, rawToken: string) {
-  return db
-    .query<InviteLinkRow, [string]>(
-      `SELECT id, token_hash, allowed_domain, max_uses, used_count, expires_at
-       FROM invite_links
-       WHERE token_hash = ?`,
-    )
-    .get(hashInviteToken(rawToken));
+async function getInviteByRawToken(db: AppDatabase, rawToken: string) {
+  return sqlGet<InviteLinkRow>(
+    db,
+    `SELECT id, token_hash, allowed_domain, max_uses, used_count, expires_at
+     FROM invite_links
+     WHERE token_hash = ?`,
+    [hashInviteToken(rawToken)],
+  );
 }
 
-export function createInviteLink(
+export async function createInviteLink(
   db: AppDatabase,
   input: {
     allowedDomain: string;
@@ -73,7 +75,8 @@ export function createInviteLink(
   const id = randomUUID();
   const allowedDomain = normalizeDomain(input.allowedDomain);
 
-  db.query(
+  await sqlRun(
+    db,
     `INSERT INTO invite_links (
       id,
       token_hash,
@@ -82,13 +85,14 @@ export function createInviteLink(
       expires_at,
       created_by_user_id
     ) VALUES (?, ?, ?, ?, ?, ?)`,
-  ).run(
-    id,
-    hashInviteToken(rawToken),
-    allowedDomain,
-    input.maxUses ?? 1,
-    input.expiresAt?.getTime() ?? null,
-    input.createdByUserId ?? null,
+    [
+      id,
+      hashInviteToken(rawToken),
+      allowedDomain,
+      input.maxUses ?? 1,
+      input.expiresAt?.getTime() ?? null,
+      input.createdByUserId ?? null,
+    ],
   );
 
   return {
@@ -98,13 +102,13 @@ export function createInviteLink(
   };
 }
 
-export function validateInviteForEmail(
+export async function validateInviteForEmail(
   db: AppDatabase,
   rawToken: string,
   email: string,
   options: { now?: Date } = {},
-): InviteValidationResult {
-  const invite = getInviteByRawToken(db, rawToken);
+): Promise<InviteValidationResult> {
+  const invite = await getInviteByRawToken(db, rawToken);
   if (!invite) {
     return { ok: false, reason: "INVITE_NOT_FOUND" };
   }
@@ -118,7 +122,14 @@ export function validateInviteForEmail(
     return { ok: false, reason: "INVITE_EXHAUSTED" };
   }
 
-  if (emailDomain(email) !== invite.allowed_domain) {
+  const signupDomain = emailDomain(email);
+  const globalDomains = parseAllowedEmailDomains();
+
+  if (!isEmailDomainAllowed(email, globalDomains)) {
+    return { ok: false, reason: "DOMAIN_NOT_ALLOWED" };
+  }
+
+  if (signupDomain !== invite.allowed_domain) {
     return { ok: false, reason: "DOMAIN_NOT_ALLOWED" };
   }
 
@@ -129,7 +140,7 @@ export function validateInviteForEmail(
   };
 }
 
-export function consumeInviteLink(
+export async function consumeInviteLink(
   db: AppDatabase,
   rawToken: string,
   input: {
@@ -137,31 +148,35 @@ export function consumeInviteLink(
     userId: string;
   },
 ) {
-  const validation = validateInviteForEmail(db, rawToken, input.email);
+  const validation = await validateInviteForEmail(db, rawToken, input.email);
   if (!validation.ok) {
     throw new Error(validation.reason);
   }
 
-  const invite = getInviteByRawToken(db, rawToken);
+  const invite = await getInviteByRawToken(db, rawToken);
   if (!invite) {
     throw new Error("INVITE_NOT_FOUND");
   }
 
-  db.transaction(() => {
-    db.query(
+  await sqlTransaction(db, async (tx) => {
+    await sqlRun(
+      tx,
       `UPDATE invite_links
        SET used_count = used_count + 1
        WHERE id = ?`,
-    ).run(invite.id);
+      [invite.id],
+    );
 
-    db.query(
+    await sqlRun(
+      tx,
       `INSERT INTO invite_link_uses (id, invite_link_id, email, user_id)
        VALUES (?, ?, ?, ?)`,
-    ).run(randomUUID(), invite.id, normalizeEmail(input.email), input.userId);
-  })();
+      [randomUUID(), invite.id, normalizeEmail(input.email), input.userId],
+    );
+  });
 }
 
-export function ensureProfileForUser(
+export async function ensureProfileForUser(
   db: AppDatabase,
   input: {
     userId: string;
@@ -175,7 +190,8 @@ export function ensureProfileForUser(
   const role = adminEmails.has(email) ? "ADMIN" : "USER";
   const displayName = input.name.trim() || email;
 
-  db.query(
+  await sqlRun(
+    db,
     `INSERT INTO profiles (user_id, email, display_name, role, updated_at)
      VALUES (?, ?, ?, ?, ?)
      ON CONFLICT(user_id) DO UPDATE SET
@@ -186,15 +202,16 @@ export function ensureProfileForUser(
          ELSE excluded.role
        END,
        updated_at = excluded.updated_at`,
-  ).run(input.userId, email, displayName, role, Date.now());
+    [input.userId, email, displayName, role, Date.now()],
+  );
 
-  const profile = db
-    .query<ProfileRow, [string]>(
-      `SELECT user_id, email, display_name, role
-       FROM profiles
-       WHERE user_id = ?`,
-    )
-    .get(input.userId);
+  const profile = await sqlGet<ProfileRow>(
+    db,
+    `SELECT user_id, email, display_name, role
+     FROM profiles
+     WHERE user_id = ?`,
+    [input.userId],
+  );
 
   if (!profile) {
     throw new Error("PROFILE_NOT_FOUND");
@@ -208,6 +225,55 @@ export function ensureProfileForUser(
   };
 }
 
-export function parseAdminEmails(value = Bun.env.ADMIN_EMAILS ?? "") {
+export function parseAdminEmails(value = env("ADMIN_EMAILS")) {
   return value.split(",").map(normalizeEmail).filter(Boolean);
+}
+
+export function parseAllowedEmailDomains(
+  value = env("ALLOWED_EMAIL_DOMAINS"),
+) {
+  return value
+    .split(",")
+    .map((domain) => normalizeDomain(domain))
+    .filter(Boolean);
+}
+
+export function isEmailDomainAllowed(email: string, allowedDomains: string[]) {
+  if (allowedDomains.length === 0) {
+    return true;
+  }
+
+  return allowedDomains.includes(emailDomain(email));
+}
+
+type InviteListRow = {
+  id: string;
+  allowed_domain: string;
+  max_uses: number;
+  used_count: number;
+  expires_at: number | null;
+  created_at: number;
+};
+
+export async function listInviteLinks(db: AppDatabase) {
+  const rows = await sqlAll<InviteListRow>(
+    db,
+    `SELECT id, allowed_domain, max_uses, used_count, expires_at, created_at
+     FROM invite_links
+     ORDER BY created_at DESC`,
+  );
+
+  return rows.map((row) => ({
+    id: row.id,
+    allowedDomain: row.allowed_domain,
+    maxUses: row.max_uses,
+    usedCount: row.used_count,
+    expiresAt: row.expires_at,
+    createdAt: row.created_at,
+  }));
+}
+
+export function getDefaultInviteDomain() {
+  const domains = parseAllowedEmailDomains();
+  return domains[0] ?? "";
 }
