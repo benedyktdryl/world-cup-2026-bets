@@ -4,7 +4,11 @@ import { Button } from "~/components/ui/button";
 import { Empty, EmptyContent, EmptyTitle } from "~/components/ui/empty";
 import { Input } from "~/components/ui/input";
 import { MATCHES_ORDER_BY } from "~/lib/matches";
-import { upsertBet } from "~/lib/server/betting";
+import {
+  isMatchLockedForBetting,
+  isUnfetchedKnockoutMatch,
+  upsertBet,
+} from "~/lib/server/betting";
 import { createAppDatabase, runMigrations } from "~/lib/server/db";
 import { requireSession } from "~/lib/server/session";
 import type { Route } from "./+types/app.matches";
@@ -127,7 +131,7 @@ export default function Matches({ loaderData }: Route.ComponentProps) {
         </p>
       ) : null}
       {loaderData.matches.map((match) => {
-        const locked = Date.now() >= match.kickoff_at;
+        const locked = isMatchLockedForBetting(match);
         const homeInputId = `${match.id}-predicted-home`;
         const awayInputId = `${match.id}-predicted-away`;
         return (
@@ -200,7 +204,13 @@ export default function Matches({ loaderData }: Route.ComponentProps) {
                 />
               </label>
               <Button type="submit" disabled={locked}>
-                {locked ? "Locked" : "Save"}
+                {locked
+                  ? match.status === "FINISHED"
+                    ? "Finished"
+                    : isUnfetchedKnockoutMatch(match)
+                      ? "Awaiting teams"
+                      : "Locked"
+                  : "Save"}
               </Button>
             </Form>
           </article>

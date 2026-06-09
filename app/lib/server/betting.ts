@@ -6,10 +6,61 @@ export type ScoreReason = "EXACT" | "RESULT" | "MISS";
 type MatchRow = {
   id: string;
   kickoff_at: number;
+  stage: string;
+  group_code: string | null;
   home_goals: number | null;
   away_goals: number | null;
   status: "SCHEDULED" | "LIVE" | "FINISHED";
+  home_team: string | null;
+  away_team: string | null;
 };
+
+export type MatchBettingState = {
+  kickoff_at: number;
+  stage: string;
+  group_code: string | null;
+  status: string;
+  home_team?: string | null;
+  away_team?: string | null;
+};
+
+const KNOCKOUT_STAGE_PATTERN =
+  /1\/\d+|round of \d+|quarter-?final|semi-?final|final/i;
+const QUALIFIER_STAGE_PATTERN = /^round \d+$/i;
+
+export function isUnfetchedKnockoutMatch(match: MatchBettingState) {
+  if (QUALIFIER_STAGE_PATTERN.test(match.stage.trim())) {
+    return false;
+  }
+
+  if (!KNOCKOUT_STAGE_PATTERN.test(match.stage)) {
+    return false;
+  }
+
+  const homeTeam = match.home_team?.trim();
+  const awayTeam = match.away_team?.trim();
+
+  if (!homeTeam || !awayTeam) {
+    return true;
+  }
+
+  return homeTeam === "TBD" || awayTeam === "TBD";
+}
+
+export function isMatchLockedForBetting(
+  match: MatchBettingState,
+  now: Date = new Date(),
+) {
+  if (isUnfetchedKnockoutMatch(match)) {
+    return true;
+  }
+
+  if (match.status === "FINISHED" || match.status === "LIVE") {
+    return true;
+  }
+
+  return now.getTime() >= match.kickoff_at;
+}
 
 type BetRow = {
   user_id: string;
@@ -66,9 +117,20 @@ function resultOf(homeGoals: number, awayGoals: number) {
 function getMatch(db: AppDatabase, matchId: string) {
   const match = db
     .query<MatchRow, [string]>(
-      `SELECT id, kickoff_at, home_goals, away_goals, status
+      `SELECT
+        matches.id,
+        matches.kickoff_at,
+        matches.stage,
+        matches.group_code,
+        matches.home_goals,
+        matches.away_goals,
+        matches.status,
+        home.name AS home_team,
+        away.name AS away_team
        FROM matches
-       WHERE id = ?`,
+       LEFT JOIN teams home ON home.id = matches.home_team_id
+       LEFT JOIN teams away ON away.id = matches.away_team_id
+       WHERE matches.id = ?`,
     )
     .get(matchId);
 
@@ -91,7 +153,7 @@ export function upsertBet(
 ) {
   const match = getMatch(db, input.matchId);
   const now = input.now ?? new Date();
-  if (now.getTime() >= match.kickoff_at) {
+  if (isMatchLockedForBetting(match, now)) {
     throw new Error("MATCH_LOCKED");
   }
 
