@@ -6,6 +6,7 @@ export default [
   route("invite/:token", "routes/invite.$token.tsx"),
   route("api/auth/*", "routes/api.auth.$.ts"),
   route("api/cron/crawl", "routes/api.cron.crawl.ts"),
+  route("api/setup/admin", "routes/api.setup.admin.ts"),
   route("app", "routes/app.tsx", [
     index("routes/app.dashboard.tsx"),
     route("matches", "routes/app.matches.tsx"),
