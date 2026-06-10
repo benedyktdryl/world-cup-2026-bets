@@ -61,19 +61,36 @@ const columns: ColumnDef<MatchTableRow>[] = [
   },
   {
     id: "fixture",
-    header: "Fixture",
+    header: () => (
+      <div className="flex flex-col gap-0.5">
+        <span>Fixture</span>
+        <span className="font-normal text-muted-foreground text-xs">
+          Home (left) · Away (right)
+        </span>
+      </div>
+    ),
     cell: ({ row }) => {
       const match = row.original;
       return (
-        <div className="flex min-w-48 flex-col gap-1">
-          <span className="font-medium">
-            {match.home_team ?? "TBD"}{" "}
-            <span className="text-muted-foreground">vs</span>{" "}
-            {match.away_team ?? "TBD"}
-          </span>
+        <div className="flex min-w-56 flex-col gap-2">
+          <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 text-sm">
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[10px] text-muted-foreground uppercase tracking-wide">
+                Home
+              </span>
+              <span className="font-medium">{match.home_team ?? "TBD"}</span>
+            </div>
+            <span className="text-muted-foreground text-xs">vs</span>
+            <div className="flex flex-col gap-0.5 text-right">
+              <span className="text-[10px] text-muted-foreground uppercase tracking-wide">
+                Away
+              </span>
+              <span className="font-medium">{match.away_team ?? "TBD"}</span>
+            </div>
+          </div>
           {match.status === "FINISHED" ? (
             <span className="text-muted-foreground text-sm tabular-nums">
-              Final {match.home_goals}-{match.away_goals}
+              Final {match.home_goals}:{match.away_goals} (home:away)
             </span>
           ) : null}
         </div>
@@ -82,18 +99,32 @@ const columns: ColumnDef<MatchTableRow>[] = [
   },
   {
     id: "prediction",
-    header: "Your prediction",
+    header: () => (
+      <div className="flex flex-col gap-0.5">
+        <span>Your prediction</span>
+        <span className="font-normal text-muted-foreground text-xs">
+          Left = home goals · Right = away goals
+        </span>
+      </div>
+    ),
     cell: ({ row }) => {
       const match = row.original;
       const locked = isMatchLockedForBetting(match);
       const homeInputId = `${match.id}-predicted-home`;
       const awayInputId = `${match.id}-predicted-away`;
+      const homeTeam = match.home_team ?? "Home";
+      const awayTeam = match.away_team ?? "Away";
 
       return (
         <Form method="post" className="flex items-end gap-2">
           <input type="hidden" name="matchId" value={match.id} />
-          <label htmlFor={homeInputId} className="flex flex-col gap-1 text-xs">
-            Home
+          <label htmlFor={homeInputId} className="flex max-w-24 flex-col gap-1">
+            <span className="text-[10px] text-muted-foreground uppercase tracking-wide">
+              Home
+            </span>
+            <span className="truncate text-xs" title={homeTeam}>
+              {homeTeam}
+            </span>
             <Input
               id={homeInputId}
               name="predictedHomeGoals"
@@ -103,11 +134,19 @@ const columns: ColumnDef<MatchTableRow>[] = [
               defaultValue={match.predicted_home_goals ?? ""}
               disabled={locked}
               className="w-16"
-              aria-label="Predicted home goals"
+              aria-label={`Predicted goals for ${homeTeam} (home)`}
             />
           </label>
-          <label htmlFor={awayInputId} className="flex flex-col gap-1 text-xs">
-            Away
+          <span aria-hidden className="pb-2 text-muted-foreground text-xs">
+            :
+          </span>
+          <label htmlFor={awayInputId} className="flex max-w-24 flex-col gap-1">
+            <span className="text-[10px] text-muted-foreground uppercase tracking-wide">
+              Away
+            </span>
+            <span className="truncate text-xs" title={awayTeam}>
+              {awayTeam}
+            </span>
             <Input
               id={awayInputId}
               name="predictedAwayGoals"
@@ -117,7 +156,7 @@ const columns: ColumnDef<MatchTableRow>[] = [
               defaultValue={match.predicted_away_goals ?? ""}
               disabled={locked}
               className="w-16"
-              aria-label="Predicted away goals"
+              aria-label={`Predicted goals for ${awayTeam} (away)`}
             />
           </label>
           <Button type="submit" size="sm" disabled={locked}>

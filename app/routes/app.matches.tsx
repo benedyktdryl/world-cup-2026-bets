@@ -123,6 +123,10 @@ export default function Matches({ loaderData }: Route.ComponentProps) {
           Bet saved.
         </p>
       ) : null}
+      <p className="text-muted-foreground text-sm">
+        Scores are home:away — left column is the home team, right column is
+        the away team.
+      </p>
       <MatchesDataTable matches={loaderData.matches} />
     </section>
   );
