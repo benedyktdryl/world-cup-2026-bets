@@ -1,4 +1,4 @@
-import { Form, Link, useActionData } from "react-router";
+import { Form, Link, redirect, useActionData } from "react-router";
 import { Button } from "~/components/ui/button";
 import {
   Field,
@@ -11,10 +11,20 @@ import {
   type AuthActionResult,
   signUpFromInviteForm,
 } from "~/lib/server/auth-actions";
+import { getCurrentSession } from "~/lib/server/session";
 import type { Route } from "./+types/invite.$token";
 
 export function meta(_args: Route.MetaArgs) {
   return [{ title: "Join Contest | World Cup Bets" }];
+}
+
+export async function loader({ request }: Route.LoaderArgs) {
+  const session = await getCurrentSession(request);
+  if (session) {
+    throw redirect("/app");
+  }
+
+  return null;
 }
 
 export async function action({ request }: Route.ActionArgs) {
@@ -77,9 +87,17 @@ export default function InviteSignup({ params }: Route.ComponentProps) {
           </FieldGroup>
 
           {actionData?.error ? (
-            <p aria-live="polite" className="text-destructive text-sm">
-              {actionData.error}
-            </p>
+            <div
+              aria-live="polite"
+              className="rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-sm"
+            >
+              <p className="text-destructive">{actionData.error}</p>
+              {actionData.error.includes("already exists") ? (
+                <p className="mt-2 text-muted-foreground">
+                  Your account may have been created on a previous attempt.
+                </p>
+              ) : null}
+            </div>
           ) : null}
 
           <Button type="submit" size="lg">
@@ -88,7 +106,7 @@ export default function InviteSignup({ params }: Route.ComponentProps) {
         </Form>
 
         <Button asChild variant="ghost">
-          <Link to="/login">Already Have An Account?</Link>
+          <Link to="/#sign-in">Already Have An Account?</Link>
         </Button>
       </section>
     </main>

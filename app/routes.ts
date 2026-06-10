@@ -15,6 +15,7 @@ export default [
     route("leaderboard", "routes/app.leaderboard.tsx"),
     route("admin", "routes/admin.tsx", [
       route("invites", "routes/admin.invites.tsx"),
+      route("users", "routes/admin.users.tsx"),
       route("crawl", "routes/admin.crawl.tsx"),
     ]),
   ]),

@@ -2,12 +2,15 @@ import {
   GitBranch,
   Grid3x3,
   LayoutDashboard,
+  LogOut,
   Medal,
   Radar,
   Shield,
   Trophy,
+  Users,
 } from "lucide-react";
-import { NavLink } from "react-router";
+import { Form, NavLink } from "react-router";
+import { Button } from "~/components/ui/button";
 import {
   Sidebar,
   SidebarContent,
@@ -55,6 +58,11 @@ const adminItems = [
     title: "Invites",
     url: "/app/admin/invites",
     icon: Shield,
+  },
+  {
+    title: "Users",
+    url: "/app/admin/users",
+    icon: Users,
   },
   {
     title: "Crawl",
@@ -115,7 +123,19 @@ export function AppSidebar({ userName }: { userName: string }) {
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
-      <SidebarFooter />
+      <SidebarFooter>
+        <Form method="post" action="/app">
+          <input type="hidden" name="intent" value="logout" />
+          <Button
+            type="submit"
+            variant="ghost"
+            className="w-full justify-start gap-2"
+          >
+            <LogOut className="size-4" />
+            Log out
+          </Button>
+        </Form>
+      </SidebarFooter>
     </Sidebar>
   );
 }

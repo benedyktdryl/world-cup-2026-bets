@@ -34,6 +34,11 @@ export default function AdminLayout() {
           </NavLink>
         </Button>
         <Button asChild variant="ghost" size="sm">
+          <NavLink to="/app/admin/users" className={tabClass}>
+            Users
+          </NavLink>
+        </Button>
+        <Button asChild variant="ghost" size="sm">
           <NavLink to="/app/admin/crawl" className={tabClass}>
             Crawl
           </NavLink>

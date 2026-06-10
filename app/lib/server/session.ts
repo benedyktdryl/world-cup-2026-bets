@@ -10,7 +10,7 @@ export async function getCurrentSession(request: Request) {
 export async function requireSession(request: Request): Promise<AuthSession> {
   const session = await getCurrentSession(request);
   if (!session) {
-    throw redirect("/login");
+    throw redirect("/");
   }
 
   return session;

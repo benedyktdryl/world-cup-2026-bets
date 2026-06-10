@@ -44,9 +44,15 @@ export async function action({ request }: Route.ActionArgs) {
     );
     return { result };
   } catch (error) {
-    return {
-      error: error instanceof Error ? error.message : "Crawl failed.",
-    };
+    const message =
+      error instanceof Error
+        ? error.message
+        : typeof error === "string"
+          ? error
+          : error == null
+            ? "Crawl failed without an error message."
+            : "Crawl failed.";
+    return { error: message };
   }
 }
 

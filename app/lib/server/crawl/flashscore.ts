@@ -124,7 +124,7 @@ export function parseFeedEvents(feedData: string): FlashscoreFeedEvent[] {
 export function extractInitialFeedData(html: string, feedKey: string) {
   const escapedKey = feedKey.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const regex = new RegExp(
-    `cjs\\.initialFeeds\\["${escapedKey}"\\]\\s*=\\s*\\{[\\s\\S]*?data:\\s*\`([\\s\\S]*?)\`,`,
+    `cjs\\.initialFeeds\\[(?:"|')${escapedKey}(?:"|')\\]\\s*=\\s*\\{[\\s\\S]*?data:\\s*\`([\\s\\S]*?)\`,`,
     "m",
   );
   return html.match(regex)?.[1] ?? null;
@@ -155,6 +155,45 @@ export function extractSummaryFeeds(html: string): FlashscoreSummaryFeeds {
   };
 }
 
+export function getTournamentFixturesPageUrl(sourceUrl: string) {
+  const url = new URL(sourceUrl);
+  if (!url.pathname.endsWith("/")) {
+    url.pathname += "/";
+  }
+
+  return new URL("fixtures/", url).toString();
+}
+
+export function mergeFeedEvents(...eventLists: FlashscoreFeedEvent[][]) {
+  const merged = new Map<string, FlashscoreFeedEvent>();
+
+  for (const events of eventLists) {
+    for (const event of events) {
+      merged.set(event.eventId, event);
+    }
+  }
+
+  return [...merged.values()];
+}
+
+export function collectFinalsEvents(input: {
+  summaryHtml: string;
+  fixturesHtml: string;
+}) {
+  const summary = extractSummaryFeeds(input.summaryHtml);
+  const fixturesFeed = extractInitialFeedData(input.fixturesHtml, "fixtures");
+  const resultsFeed = extractInitialFeedData(input.fixturesHtml, "results");
+
+  return filterWorldCup2026FinalsEvents(
+    mergeFeedEvents(
+      summary.results,
+      summary.fixtures,
+      fixturesFeed ? parseFeedEvents(fixturesFeed) : [],
+      resultsFeed ? parseFeedEvents(resultsFeed) : [],
+    ),
+  );
+}
+
 export function getScraperUserAgent() {
   const contactUrl = env("SCRAPER_CONTACT_URL").trim();
   if (contactUrl) {
@@ -177,7 +216,11 @@ class CachedRateLimitedFetcher {
     options: FetcherOptions = {},
     private readonly fetchImpl: typeof fetch = fetch,
   ) {
-    this.options = { ...DEFAULT_FETCHER_OPTIONS, ...options };
+    this.options = {
+      minDelayMs: options.minDelayMs ?? DEFAULT_FETCHER_OPTIONS.minDelayMs,
+      retries: options.retries ?? DEFAULT_FETCHER_OPTIONS.retries,
+      cacheTtlMs: options.cacheTtlMs ?? DEFAULT_FETCHER_OPTIONS.cacheTtlMs,
+    };
   }
 
   async fetchHtml(url: string) {
@@ -382,20 +425,27 @@ export async function crawlFlashscoreCompetition(
       [competitionId, input.competitionName, input.sourceUrl, Date.now()],
     );
 
+    const fetcherOptions: FetcherOptions = {};
+    if (input.minDelayMs != null) {
+      fetcherOptions.minDelayMs = input.minDelayMs;
+    }
+    if (input.retries != null) {
+      fetcherOptions.retries = input.retries;
+    }
+
     const fetcher = new CachedRateLimitedFetcher(
       db,
-      {
-        minDelayMs: input.minDelayMs,
-        retries: input.retries,
-      },
+      fetcherOptions,
       input.fetchImpl,
     );
     const page = await fetcher.fetchHtml(input.sourceUrl);
-    const feeds = extractSummaryFeeds(page.html);
-    const events = filterWorldCup2026FinalsEvents([
-      ...feeds.results,
-      ...feeds.fixtures,
-    ]);
+    const fixturesPage = await fetcher.fetchHtml(
+      getTournamentFixturesPageUrl(input.sourceUrl),
+    );
+    const events = collectFinalsEvents({
+      summaryHtml: page.html,
+      fixturesHtml: fixturesPage.html,
+    });
     const seenTeams = new Set<string>();
     const seenMatches = new Set<string>();
 

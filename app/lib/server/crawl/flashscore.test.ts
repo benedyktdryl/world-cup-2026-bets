@@ -10,19 +10,24 @@ import {
 } from "../db";
 import { sqlGet } from "../sql";
 import {
+  collectFinalsEvents,
   crawlFlashscoreCompetition,
+  extractInitialFeedData,
   extractSummaryFeeds,
   filterWorldCup2026FinalsEvents,
+  getTournamentFixturesPageUrl,
   isWorldCup2026FinalsKickoff,
   parseFeedEvents,
 } from "./flashscore";
 
 const mexicoOpenerUnix = 1_781_204_400;
 const secondFinalsFixtureUnix = 1_781_229_600;
+const thirdFinalsFixtureUnix = 1_781_316_000;
 const qualifierUnix = 1_763_514_000;
 
 const sampleResultsFeed = `SA÷1¬~AA÷ev_result_1¬AD÷${mexicoOpenerUnix}¬AB÷3¬ER÷Round 1¬PY÷away1¬AF÷Away One¬WV÷away-one¬PX÷home1¬AE÷Home One¬WU÷home-one¬AS÷1¬AG÷2¬`;
 const sampleFixturesFeed = `SA÷1¬~AA÷ev_fix_1¬AD÷${secondFinalsFixtureUnix}¬AB÷1¬ER÷Round 1¬PY÷away2¬AF÷Away Two¬WV÷away-two¬PX÷home2¬AE÷Home Two¬WU÷home-two¬`;
+const extraFixturesFeed = `SA÷1¬~AA÷ev_fix_1¬AD÷${secondFinalsFixtureUnix}¬AB÷1¬ER÷Round 1¬PY÷away2¬AF÷Away Two¬WV÷away-two¬PX÷home2¬AE÷Home Two¬WU÷home-two¬~AA÷ev_fix_2¬AD÷${thirdFinalsFixtureUnix}¬AB÷1¬ER÷Round 1¬PY÷away3¬AF÷Away Three¬WV÷away-three¬PX÷home3¬AE÷Home Three¬WU÷home-three¬`;
 const qualifierFeed = `SA÷1¬~AA÷ev_qual_1¬AD÷${qualifierUnix}¬AB÷3¬ER÷Round 6¬PY÷awayQ¬AF÷Curacao¬WV÷curacao¬PX÷homeQ¬AE÷Jamaica¬WU÷jamaica¬AS÷0¬AG÷0¬`;
 const realFixtureEventFeed =
   "SA÷1¬~AA÷G2g1DVWo¬AD÷1773505800¬AB÷1¬CR÷1¬AC÷1¬CX÷GKS Katowice¬ER÷Round 25¬WN÷GDA¬PY÷GGLmkiK8¬AF÷Lechia Gdansk¬WV÷lechia-gdansk¬WM÷KAT¬PX÷K4AgRmS1¬AE÷GKS Katowice¬WU÷gks-katowice¬";
@@ -33,6 +38,14 @@ cjs.initialFeeds["summary-results"] = { data: \`${sampleResultsFeed}\`, allEvent
 cjs.initialFeeds["summary-fixtures"] = { data: \`${sampleFixturesFeed}\`, allEventsCount: 1 };
 </script>
 `;
+const sampleFixturesPageHtml = `
+<script>
+cjs.initialFeeds['fixtures'] = { data: \`${extraFixturesFeed}\`, allEventsCount: 2 };
+</script>
+`;
+const competitionUrl =
+  "https://www.flashscore.com/football/world/world-championship/";
+const fixturesPageUrl = getTournamentFixturesPageUrl(competitionUrl);
 
 const tempDirs: string[] = [];
 
@@ -77,6 +90,25 @@ describe("flashscore feed parsing", () => {
     expect(filtered[0]?.homeTeamName).toBe("Home One");
   });
 
+  test("extractInitialFeedData supports single-quoted feed keys", () => {
+    expect(
+      extractInitialFeedData(sampleFixturesPageHtml, "fixtures"),
+    ).toContain("ev_fix_2");
+  });
+
+  test("collectFinalsEvents merges summary and full fixtures page feeds", () => {
+    const events = collectFinalsEvents({
+      summaryHtml: sampleCompetitionHtml,
+      fixturesHtml: sampleFixturesPageHtml,
+    });
+
+    expect(events.map((event) => event.eventId).sort()).toEqual([
+      "ev_fix_1",
+      "ev_fix_2",
+      "ev_result_1",
+    ]);
+  });
+
   test("extracts summary results and fixtures from competition html", () => {
     expect(extractSummaryFeeds(sampleCompetitionHtml)).toEqual({
       results: [
@@ -101,10 +133,8 @@ describe("flashscore feed parsing", () => {
   test("crawlFlashscoreCompetition upserts teams, matches, cache, and job state", async () => {
     const db = await createTestDatabase();
     const urls = new Map([
-      [
-        "https://www.flashscore.com/football/world/world-championship/",
-        sampleCompetitionHtml,
-      ],
+      [competitionUrl, sampleCompetitionHtml],
+      [fixturesPageUrl, sampleFixturesPageHtml],
     ]);
     const fetchImpl = (async (input) => {
       const body = urls.get(String(input));
@@ -113,8 +143,7 @@ describe("flashscore feed parsing", () => {
 
     const result = await crawlFlashscoreCompetition(db, {
       competitionName: "World Cup 2026",
-      sourceUrl:
-        "https://www.flashscore.com/football/world/world-championship/",
+      sourceUrl: competitionUrl,
       baseUrl: "https://www.flashscore.com",
       fetchImpl,
       minDelayMs: 0,
@@ -122,8 +151,8 @@ describe("flashscore feed parsing", () => {
     });
 
     expect(result).toEqual({
-      teams: 4,
-      matches: 2,
+      teams: 6,
+      matches: 3,
       jobStatus: "SUCCEEDED",
     });
 
@@ -132,22 +161,47 @@ describe("flashscore feed parsing", () => {
         db,
         "SELECT COUNT(*) AS total FROM teams",
       ))?.total,
-    ).toBe(4);
+    ).toBe(6);
     expect(
       (await sqlGet<{ total: number }>(
         db,
         "SELECT COUNT(*) AS total FROM matches",
       ))?.total,
-    ).toBe(2);
+    ).toBe(3);
     expect(
       (await sqlGet<{ total: number }>(
         db,
         "SELECT COUNT(*) AS total FROM scraped_pages",
       ))?.total,
-    ).toBe(1);
+    ).toBe(2);
     expect(
       await sqlGet<{ status: string }>(db, "SELECT status FROM crawl_jobs"),
     ).toEqual({ status: "SUCCEEDED" });
+
+    closeAppDatabase(db);
+  });
+
+  test("crawlFlashscoreCompetition uses default fetch options when retries are omitted", async () => {
+    const db = await createTestDatabase();
+    const fetchImpl = (async (input) => {
+      const url = String(input);
+      const body =
+        url === fixturesPageUrl
+          ? sampleFixturesPageHtml
+          : sampleCompetitionHtml;
+      return new Response(body, { status: 200 });
+    }) as typeof fetch;
+
+    const result = await crawlFlashscoreCompetition(db, {
+      competitionName: "World Cup 2026",
+      sourceUrl: competitionUrl,
+      baseUrl: "https://www.flashscore.com",
+      fetchImpl,
+      minDelayMs: 0,
+    });
+
+    expect(result.jobStatus).toBe("SUCCEEDED");
+    expect(result.matches).toBeGreaterThan(0);
 
     closeAppDatabase(db);
   });

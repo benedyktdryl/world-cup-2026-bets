@@ -1,6 +1,7 @@
 import { Outlet } from "react-router";
 import { AppSidebar } from "~/components/app-sidebar";
 import { SidebarInset, SidebarProvider } from "~/components/ui/sidebar";
+import { signOutFromSession } from "~/lib/server/auth-actions";
 import { requireSession } from "~/lib/server/session";
 import type { Route } from "./+types/app";
 
@@ -12,6 +13,16 @@ export async function loader({ request }: Route.LoaderArgs) {
       email: session.user.email,
     },
   };
+}
+
+export async function action({ request }: Route.ActionArgs) {
+  const formData = await request.formData();
+  if (formData.get("intent") === "logout") {
+    await requireSession(request);
+    return signOutFromSession(request);
+  }
+
+  return new Response("Not found", { status: 404 });
 }
 
 export default function AppLayout({ loaderData }: Route.ComponentProps) {
