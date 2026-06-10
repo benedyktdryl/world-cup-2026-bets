@@ -1,3 +1,6 @@
+import { useActionData } from "react-router";
+import { InviteCopyButton } from "~/components/invite-copy-button";
+import { ResetUserPasswordForm } from "~/components/reset-user-password-form";
 import { Badge } from "~/components/ui/badge";
 import { Progress } from "~/components/ui/progress";
 import {
@@ -9,14 +12,71 @@ import {
   TableRow,
 } from "~/components/ui/table";
 import { requireAdmin } from "~/lib/server/admin";
+import {
+  generateTemporaryPassword,
+  resetUserPassword,
+  validateNewPassword,
+} from "~/lib/server/admin-password";
 import { getRegisteredUserStats } from "~/lib/server/admin-users";
 import { withDatabase } from "~/lib/server/db";
 import type { Route } from "./+types/admin.users";
+
+type ActionResult = {
+  error?: string;
+  passwordReset?: {
+    email: string;
+    password: string;
+  };
+};
 
 export async function loader({ request }: Route.LoaderArgs) {
   await requireAdmin(request);
 
   return withDatabase(async (db) => getRegisteredUserStats(db));
+}
+
+export async function action({ request }: Route.ActionArgs) {
+  await requireAdmin(request);
+  const formData = await request.formData();
+
+  if (formData.get("intent") !== "reset-password") {
+    return { error: "Unknown action." };
+  }
+
+  const userId = String(formData.get("userId") ?? "").trim();
+  const email = String(formData.get("email") ?? "").trim();
+  const manualPassword = String(formData.get("newPassword") ?? "").trim();
+  const newPassword = manualPassword || generateTemporaryPassword();
+
+  const validationError = validateNewPassword(newPassword);
+  if (validationError) {
+    return { error: validationError };
+  }
+
+  if (!userId) {
+    return { error: "User is required." };
+  }
+
+  try {
+    await withDatabase((db) => resetUserPassword(db, { userId, newPassword }));
+    return {
+      passwordReset: {
+        email: email || userId,
+        password: newPassword,
+      },
+    };
+  } catch (error) {
+    if (error instanceof Error && error.message === "USER_HAS_NO_PASSWORD_ACCOUNT") {
+      return { error: "This user has no email/password login to reset." };
+    }
+
+    return {
+      error:
+        error instanceof Error
+          ? error.message
+          : "Could not reset the password.",
+    };
+  }
 }
 
 function formatDate(timestamp: number) {
@@ -25,9 +85,36 @@ function formatDate(timestamp: number) {
 
 export default function AdminUsers({ loaderData }: Route.ComponentProps) {
   const { users, summary } = loaderData;
+  const actionData = useActionData<ActionResult>();
 
   return (
     <div className="flex flex-col gap-6">
+      {actionData?.error ? (
+        <p aria-live="polite" className="text-destructive text-sm">
+          {actionData.error}
+        </p>
+      ) : null}
+      {actionData?.passwordReset ? (
+        <div
+          aria-live="polite"
+          className="rounded-xl border bg-muted/40 p-4 text-sm"
+        >
+          <p className="font-medium">Password updated</p>
+          <p className="mt-1 text-muted-foreground">
+            Share these credentials privately with {actionData.passwordReset.email}
+            . Copy now — this is shown once.
+          </p>
+          <p className="mt-3 break-all font-mono">
+            {actionData.passwordReset.password}
+          </p>
+          <div className="mt-3">
+            <InviteCopyButton
+              value={actionData.passwordReset.password}
+              label="Copy password"
+            />
+          </div>
+        </div>
+      ) : null}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {[
           ["Registered users", summary.totalUsers],
@@ -53,8 +140,8 @@ export default function AdminUsers({ loaderData }: Route.ComponentProps) {
             Registered users
           </h2>
           <p className="text-muted-foreground text-sm">
-            Bets filled out of all crawled fixtures. Open-column uses matches
-            still unlocked for predictions.
+            Bets filled out of all crawled fixtures. Password resets keep the
+            same account, bets, and points — only the login password changes.
           </p>
         </div>
 
@@ -71,6 +158,7 @@ export default function AdminUsers({ loaderData }: Route.ComponentProps) {
                 <TableHead>Completion</TableHead>
                 <TableHead className="text-right">Points</TableHead>
                 <TableHead className="text-right">Exact</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -118,6 +206,13 @@ export default function AdminUsers({ loaderData }: Route.ComponentProps) {
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
                     {user.exactScores}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <ResetUserPasswordForm
+                      userId={user.userId}
+                      email={user.email}
+                      displayName={user.displayName}
+                    />
                   </TableCell>
                 </TableRow>
               ))}

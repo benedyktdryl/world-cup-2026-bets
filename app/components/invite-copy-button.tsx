@@ -2,7 +2,13 @@ import { Check, Copy } from "lucide-react";
 import { useState } from "react";
 import { Button } from "~/components/ui/button";
 
-export function InviteCopyButton({ value }: { value: string }) {
+export function InviteCopyButton({
+  value,
+  label = "Copy link",
+}: {
+  value: string;
+  label?: string;
+}) {
   const [copied, setCopied] = useState(false);
 
   return (
@@ -17,7 +23,7 @@ export function InviteCopyButton({ value }: { value: string }) {
       }}
     >
       {copied ? <Check /> : <Copy />}
-      {copied ? "Copied" : "Copy link"}
+      {copied ? "Copied" : label}
     </Button>
   );
 }
