@@ -1,6 +1,7 @@
 import { useActionData } from "react-router";
 import { MatchesDataTable } from "~/components/matches-data-table";
 import { Empty, EmptyContent, EmptyTitle } from "~/components/ui/empty";
+import { BETTING_CLOSE_HOURS } from "~/lib/contest-rules";
 import { MATCHES_ORDER_BY } from "~/lib/matches";
 import { upsertBet } from "~/lib/server/betting";
 import { withDatabase } from "~/lib/server/db";
@@ -89,7 +90,7 @@ export async function action({ request }: Route.ActionArgs) {
     return {
       error:
         error instanceof Error && error.message === "MATCH_LOCKED"
-          ? "Bets close 12 hours before kickoff."
+          ? `Bets close ${BETTING_CLOSE_HOURS} hours before kickoff.`
           : "Could not save this bet.",
     };
   }
@@ -125,7 +126,11 @@ export default function Matches({ loaderData }: Route.ComponentProps) {
       ) : null}
       <p className="text-muted-foreground text-sm">
         Scores are home:away — left column is the home team, right column is
-        the away team.
+        the away team. You can change predictions until{" "}
+        <strong className="text-foreground">
+          {BETTING_CLOSE_HOURS} hours before kickoff
+        </strong>
+        .
       </p>
       <MatchesDataTable matches={loaderData.matches} />
     </section>

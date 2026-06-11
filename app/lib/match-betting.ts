@@ -7,7 +7,7 @@ export type MatchBettingState = {
   away_team?: string | null;
 };
 
-export const BETTING_CLOSE_WINDOW_MS = 12 * 60 * 60 * 1000;
+export const BETTING_CLOSE_WINDOW_MS = 2 * 60 * 60 * 1000;
 
 const KNOCKOUT_STAGE_PATTERN =
   /1\/\d+|round of \d+|quarter-?final|semi-?final|final/i;

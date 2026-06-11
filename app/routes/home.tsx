@@ -63,8 +63,15 @@ export default function Home() {
                 Contest rules
               </h2>
               <ol className="list-decimal space-y-2 pl-5 text-muted-foreground text-sm">
-                {contestRulesSummary.map((rule) => (
-                  <li key={rule}>{rule}</li>
+                {contestRulesSummary.map((rule, index) => (
+                  <li
+                    key={rule}
+                    className={
+                      index === 0 ? "font-medium text-foreground" : undefined
+                    }
+                  >
+                    {rule}
+                  </li>
                 ))}
               </ol>
             </section>

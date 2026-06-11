@@ -118,7 +118,7 @@ describe("simple scoring", () => {
     ).toEqual({ points: 0, reason: "MISS" });
   });
 
-  test("keeps scheduled tournament fixtures open more than 12 hours before kickoff", () => {
+  test("keeps scheduled tournament fixtures open more than 2 hours before kickoff", () => {
     expect(
       isMatchLockedForBetting({
         kickoff_at: Date.now() + BETTING_CLOSE_WINDOW_MS + 60_000,
@@ -144,7 +144,7 @@ describe("simple scoring", () => {
     ).toBe(true);
   });
 
-  test("prevents editing a bet within 12 hours of kickoff", async () => {
+  test("prevents editing a bet within 2 hours of kickoff", async () => {
     const db = await createTestDatabase();
 
     await upsertBet(db, {
@@ -152,7 +152,7 @@ describe("simple scoring", () => {
       matchId: "match_1",
       predictedHomeGoals: 2,
       predictedAwayGoals: 1,
-      now: new Date("2026-06-01T07:59:00.000Z"),
+      now: new Date("2026-06-01T17:59:00.000Z"),
     });
 
     await expect(
@@ -161,7 +161,7 @@ describe("simple scoring", () => {
         matchId: "match_1",
         predictedHomeGoals: 3,
         predictedAwayGoals: 1,
-        now: new Date("2026-06-01T08:00:00.000Z"),
+        now: new Date("2026-06-01T18:00:00.000Z"),
       }),
     ).rejects.toThrow("MATCH_LOCKED");
 

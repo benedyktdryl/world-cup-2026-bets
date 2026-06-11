@@ -5,7 +5,7 @@ import {
 } from "./match-betting";
 
 describe("match betting rules", () => {
-  test("keeps scheduled tournament fixtures open more than 12 hours before kickoff", () => {
+  test("keeps scheduled tournament fixtures open more than 2 hours before kickoff", () => {
     expect(
       isMatchLockedForBetting({
         kickoff_at: Date.now() + BETTING_CLOSE_WINDOW_MS + 60_000,
@@ -18,7 +18,7 @@ describe("match betting rules", () => {
     ).toBe(false);
   });
 
-  test("locks bets within 12 hours of kickoff", () => {
+  test("locks bets within 2 hours of kickoff", () => {
     const kickoffAt = Date.now() + BETTING_CLOSE_WINDOW_MS - 60_000;
 
     expect(
