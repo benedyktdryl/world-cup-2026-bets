@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
+import { recalculateScores } from "../betting";
 import type { AppDatabase } from "../db";
 import { env } from "../env";
-import { sqlAll, sqlGet, sqlRun } from "../sql";
+import { sqlGet, sqlRun } from "../sql";
 
 export type FlashscoreFeedEvent = {
   eventId: string;
@@ -459,11 +460,15 @@ export async function crawlFlashscoreCompetition(
         seenTeams.add(event.awayTeamId);
       }
       if (!seenMatches.has(event.eventId)) {
+        const storedMatchId = matchId(event.eventId);
         await upsertMatch(db, {
           competitionId,
           event,
           baseUrl: input.baseUrl,
         });
+        if (event.homeGoals != null && event.awayGoals != null) {
+          await recalculateScores(db, storedMatchId);
+        }
         seenMatches.add(event.eventId);
       }
     }

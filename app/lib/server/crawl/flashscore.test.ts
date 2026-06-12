@@ -2,13 +2,14 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { getLeaderboard, upsertBet } from "../betting";
 import {
-  closeAppDatabase,
   type AppDatabase,
+  closeAppDatabase,
   createAppDatabase,
   runMigrations,
 } from "../db";
-import { sqlGet } from "../sql";
+import { sqlGet, sqlRun } from "../sql";
 import {
   collectFinalsEvents,
   crawlFlashscoreCompetition,
@@ -171,26 +172,112 @@ describe("flashscore feed parsing", () => {
     });
 
     expect(
-      (await sqlGet<{ total: number }>(
-        db,
-        "SELECT COUNT(*) AS total FROM teams",
-      ))?.total,
+      (
+        await sqlGet<{ total: number }>(
+          db,
+          "SELECT COUNT(*) AS total FROM teams",
+        )
+      )?.total,
     ).toBe(6);
     expect(
-      (await sqlGet<{ total: number }>(
-        db,
-        "SELECT COUNT(*) AS total FROM matches",
-      ))?.total,
+      (
+        await sqlGet<{ total: number }>(
+          db,
+          "SELECT COUNT(*) AS total FROM matches",
+        )
+      )?.total,
     ).toBe(3);
     expect(
-      (await sqlGet<{ total: number }>(
-        db,
-        "SELECT COUNT(*) AS total FROM scraped_pages",
-      ))?.total,
+      (
+        await sqlGet<{ total: number }>(
+          db,
+          "SELECT COUNT(*) AS total FROM scraped_pages",
+        )
+      )?.total,
     ).toBe(2);
     expect(
       await sqlGet<{ status: string }>(db, "SELECT status FROM crawl_jobs"),
     ).toEqual({ status: "SUCCEEDED" });
+
+    closeAppDatabase(db);
+  });
+
+  test("crawlFlashscoreCompetition recalculates scores when crawled results finish existing matches", async () => {
+    const db = await createTestDatabase();
+    await sqlRun(
+      db,
+      `INSERT INTO profiles (user_id, email, display_name, role)
+       VALUES (?, ?, ?, ?)`,
+      ["user_ada", "ada@example.com", "Ada", "USER"],
+    );
+    await sqlRun(
+      db,
+      `INSERT INTO teams (id, source_id, name)
+       VALUES (?, ?, ?)`,
+      ["team_home1", "home1", "Home One"],
+    );
+    await sqlRun(
+      db,
+      `INSERT INTO teams (id, source_id, name)
+       VALUES (?, ?, ?)`,
+      ["team_away1", "away1", "Away One"],
+    );
+    await sqlRun(
+      db,
+      `INSERT INTO matches (
+        id,
+        source_id,
+        stage,
+        kickoff_at,
+        home_team_id,
+        away_team_id,
+        status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [
+        "match_ev_result_1",
+        "ev_result_1",
+        "Round 1",
+        mexicoOpenerUnix * 1000,
+        "team_home1",
+        "team_away1",
+        "SCHEDULED",
+      ],
+    );
+    await upsertBet(db, {
+      userId: "user_ada",
+      matchId: "match_ev_result_1",
+      predictedHomeGoals: 2,
+      predictedAwayGoals: 1,
+      now: new Date("2026-06-10T12:00:00.000Z"),
+    });
+    const urls = new Map([
+      [competitionUrl, sampleCompetitionHtml],
+      [fixturesPageUrl, sampleFixturesPageHtml],
+    ]);
+    const fetchImpl = (async (input) => {
+      const body = urls.get(String(input));
+      return new Response(body ?? "not found", { status: body ? 200 : 404 });
+    }) as typeof fetch;
+
+    await crawlFlashscoreCompetition(db, {
+      competitionName: "World Cup 2026",
+      sourceUrl: competitionUrl,
+      baseUrl: "https://www.flashscore.com",
+      fetchImpl,
+      minDelayMs: 0,
+      retries: 0,
+    });
+
+    expect(await getLeaderboard(db)).toEqual([
+      {
+        userId: "user_ada",
+        displayName: "Ada",
+        points: 3,
+        exactScores: 1,
+        resultHits: 0,
+        totalBets: 1,
+      },
+    ]);
 
     closeAppDatabase(db);
   });
