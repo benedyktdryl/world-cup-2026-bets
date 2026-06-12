@@ -114,7 +114,7 @@ export function parseFeedEvents(feedData: string): FlashscoreFeedEvent[] {
       homeTeamSlug: tokenMap.get("WU"),
       awayTeamSlug: tokenMap.get("WV"),
       homeGoals: parseInteger(tokenMap.get("AG")),
-      awayGoals: parseInteger(tokenMap.get("AS")),
+      awayGoals: parseInteger(tokenMap.get("AH")),
     });
   }
 

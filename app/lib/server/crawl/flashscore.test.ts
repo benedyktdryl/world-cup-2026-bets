@@ -25,12 +25,14 @@ const secondFinalsFixtureUnix = 1_781_229_600;
 const thirdFinalsFixtureUnix = 1_781_316_000;
 const qualifierUnix = 1_763_514_000;
 
-const sampleResultsFeed = `SA÷1¬~AA÷ev_result_1¬AD÷${mexicoOpenerUnix}¬AB÷3¬ER÷Round 1¬PY÷away1¬AF÷Away One¬WV÷away-one¬PX÷home1¬AE÷Home One¬WU÷home-one¬AS÷1¬AG÷2¬`;
+const sampleResultsFeed = `SA÷1¬~AA÷ev_result_1¬AD÷${mexicoOpenerUnix}¬AB÷3¬ER÷Round 1¬PY÷away1¬AF÷Away One¬WV÷away-one¬PX÷home1¬AE÷Home One¬WU÷home-one¬AG÷2¬AH÷1¬`;
 const sampleFixturesFeed = `SA÷1¬~AA÷ev_fix_1¬AD÷${secondFinalsFixtureUnix}¬AB÷1¬ER÷Round 1¬PY÷away2¬AF÷Away Two¬WV÷away-two¬PX÷home2¬AE÷Home Two¬WU÷home-two¬`;
 const extraFixturesFeed = `SA÷1¬~AA÷ev_fix_1¬AD÷${secondFinalsFixtureUnix}¬AB÷1¬ER÷Round 1¬PY÷away2¬AF÷Away Two¬WV÷away-two¬PX÷home2¬AE÷Home Two¬WU÷home-two¬~AA÷ev_fix_2¬AD÷${thirdFinalsFixtureUnix}¬AB÷1¬ER÷Round 1¬PY÷away3¬AF÷Away Three¬WV÷away-three¬PX÷home3¬AE÷Home Three¬WU÷home-three¬`;
-const qualifierFeed = `SA÷1¬~AA÷ev_qual_1¬AD÷${qualifierUnix}¬AB÷3¬ER÷Round 6¬PY÷awayQ¬AF÷Curacao¬WV÷curacao¬PX÷homeQ¬AE÷Jamaica¬WU÷jamaica¬AS÷0¬AG÷0¬`;
+const qualifierFeed = `SA÷1¬~AA÷ev_qual_1¬AD÷${qualifierUnix}¬AB÷3¬ER÷Round 6¬PY÷awayQ¬AF÷Curacao¬WV÷curacao¬PX÷homeQ¬AE÷Jamaica¬WU÷jamaica¬AG÷0¬AH÷0¬`;
 const realFixtureEventFeed =
   "SA÷1¬~AA÷G2g1DVWo¬AD÷1773505800¬AB÷1¬CR÷1¬AC÷1¬CX÷GKS Katowice¬ER÷Round 25¬WN÷GDA¬PY÷GGLmkiK8¬AF÷Lechia Gdansk¬WV÷lechia-gdansk¬WM÷KAT¬PX÷K4AgRmS1¬AE÷GKS Katowice¬WU÷gks-katowice¬";
+const realMexicoOpenerResultFeed =
+  "SA÷1¬~AA÷h4EoUB7T¬AD÷1781204400¬AB÷3¬ER÷Round 1¬PY÷W2ijYvlr¬AF÷South Africa¬WV÷south-africa¬PX÷O6iHcNkd¬AE÷Mexico¬WU÷mexico¬AS÷1¬AG÷2¬AH÷0¬";
 const sampleCompetitionHtml = `
 <script>
 if(!cjs.initialFeeds){cjs.initialFeeds=[];}
@@ -74,6 +76,18 @@ describe("flashscore feed parsing", () => {
       awayTeamName: "Lechia Gdansk",
       homeTeamSlug: "gks-katowice",
       awayTeamSlug: "lechia-gdansk",
+    });
+  });
+
+  test("reads finished scores from home and away score tokens", () => {
+    const events = parseFeedEvents(realMexicoOpenerResultFeed);
+
+    expect(events[0]).toMatchObject({
+      eventId: "h4EoUB7T",
+      homeTeamName: "Mexico",
+      awayTeamName: "South Africa",
+      homeGoals: 2,
+      awayGoals: 0,
     });
   });
 
