@@ -46,6 +46,11 @@ const sampleFixturesPageHtml = `
 cjs.initialFeeds['fixtures'] = { data: \`${extraFixturesFeed}\`, allEventsCount: 2 };
 </script>
 `;
+const realMexicoResultHtml = `
+<script>
+cjs.initialFeeds["summary-results"] = { data: \`${realMexicoOpenerResultFeed}\`, allEventsCount: 1 };
+</script>
+`;
 const competitionUrl =
   "https://www.flashscore.com/football/world/world-championship/";
 const fixturesPageUrl = getTournamentFixturesPageUrl(competitionUrl);
@@ -275,6 +280,86 @@ describe("flashscore feed parsing", () => {
         points: 3,
         exactScores: 1,
         resultHits: 0,
+        totalBets: 1,
+      },
+    ]);
+
+    closeAppDatabase(db);
+  });
+
+  test("crawlFlashscoreCompetition awards result points for the real Mexico opener", async () => {
+    const db = await createTestDatabase();
+    await sqlRun(
+      db,
+      `INSERT INTO profiles (user_id, email, display_name, role)
+       VALUES (?, ?, ?, ?)`,
+      ["user_ada", "ada@example.com", "Ada", "USER"],
+    );
+    await sqlRun(
+      db,
+      `INSERT INTO teams (id, source_id, name)
+       VALUES (?, ?, ?)`,
+      ["team_o6ihcnkd", "O6iHcNkd", "Mexico"],
+    );
+    await sqlRun(
+      db,
+      `INSERT INTO teams (id, source_id, name)
+       VALUES (?, ?, ?)`,
+      ["team_w2ijyvlr", "W2ijYvlr", "South Africa"],
+    );
+    await sqlRun(
+      db,
+      `INSERT INTO matches (
+        id,
+        source_id,
+        stage,
+        kickoff_at,
+        home_team_id,
+        away_team_id,
+        status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [
+        "match_h4eoub7t",
+        "h4EoUB7T",
+        "Round 1",
+        mexicoOpenerUnix * 1000,
+        "team_o6ihcnkd",
+        "team_w2ijyvlr",
+        "SCHEDULED",
+      ],
+    );
+    await upsertBet(db, {
+      userId: "user_ada",
+      matchId: "match_h4eoub7t",
+      predictedHomeGoals: 1,
+      predictedAwayGoals: 0,
+      now: new Date("2026-06-10T12:00:00.000Z"),
+    });
+    const urls = new Map([
+      [competitionUrl, realMexicoResultHtml],
+      [fixturesPageUrl, sampleFixturesPageHtml],
+    ]);
+    const fetchImpl = (async (input) => {
+      const body = urls.get(String(input));
+      return new Response(body ?? "not found", { status: body ? 200 : 404 });
+    }) as typeof fetch;
+
+    await crawlFlashscoreCompetition(db, {
+      competitionName: "World Cup 2026",
+      sourceUrl: competitionUrl,
+      baseUrl: "https://www.flashscore.com",
+      fetchImpl,
+      minDelayMs: 0,
+      retries: 0,
+    });
+
+    expect(await getLeaderboard(db)).toEqual([
+      {
+        userId: "user_ada",
+        displayName: "Ada",
+        points: 1,
+        exactScores: 0,
+        resultHits: 1,
         totalBets: 1,
       },
     ]);
