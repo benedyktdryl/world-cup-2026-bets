@@ -19,6 +19,8 @@ import {
   getTournamentFixturesPageUrl,
   isWorldCup2026FinalsKickoff,
   parseFeedEvents,
+  parseRegulationScoresFromDetailFeed,
+  resolveEventScores,
 } from "./flashscore";
 
 const mexicoOpenerUnix = 1_781_204_400;
@@ -34,6 +36,9 @@ const realFixtureEventFeed =
   "SA÷1¬~AA÷G2g1DVWo¬AD÷1773505800¬AB÷1¬CR÷1¬AC÷1¬CX÷GKS Katowice¬ER÷Round 25¬WN÷GDA¬PY÷GGLmkiK8¬AF÷Lechia Gdansk¬WV÷lechia-gdansk¬WM÷KAT¬PX÷K4AgRmS1¬AE÷GKS Katowice¬WU÷gks-katowice¬";
 const realMexicoOpenerResultFeed =
   "SA÷1¬~AA÷h4EoUB7T¬AD÷1781204400¬AB÷3¬ER÷Round 1¬PY÷W2ijYvlr¬AF÷South Africa¬WV÷south-africa¬PX÷O6iHcNkd¬AE÷Mexico¬WU÷mexico¬AS÷1¬AG÷2¬AH÷0¬";
+const extraTimeResultFeed = `SA÷1¬~AA÷ev_et_1¬AD÷${mexicoOpenerUnix}¬AB÷3¬ER÷Quarter-final¬PY÷awayET¬AF÷Away ET¬WV÷away-et¬PX÷homeET¬AE÷Home ET¬WU÷home-et¬AG÷2¬AH÷1¬AT÷1¬AU÷1¬`;
+const extraTimeDetailFeed =
+  "SA÷1¬~III÷et_goal¬IB÷105¬INX÷2¬IOX÷1¬IE÷3¬IA÷1¬~III÷rt_end¬IB÷90¬INX÷1¬IOX÷1¬IE÷3¬IA÷1¬";
 const sampleCompetitionHtml = `
 <script>
 if(!cjs.initialFeeds){cjs.initialFeeds=[];}
@@ -94,6 +99,41 @@ describe("flashscore feed parsing", () => {
       awayTeamName: "South Africa",
       homeGoals: 2,
       awayGoals: 0,
+      homeGoals90: undefined,
+      awayGoals90: undefined,
+    });
+  });
+
+  test("reads regulation-time scores from AT and AU tokens", () => {
+    const events = parseFeedEvents(extraTimeResultFeed);
+
+    expect(events[0]).toMatchObject({
+      eventId: "ev_et_1",
+      homeGoals: 2,
+      awayGoals: 1,
+      homeGoals90: 1,
+      awayGoals90: 1,
+      wentToExtraTime: true,
+    });
+  });
+
+  test("resolves regulation scores from match detail feed incidents", () => {
+    expect(parseRegulationScoresFromDetailFeed(extraTimeDetailFeed)).toEqual({
+      home: 1,
+      away: 1,
+    });
+  });
+
+  test("grades predictions against 90-minute scores when extra time changes the result", () => {
+    const [event] = parseFeedEvents(extraTimeResultFeed);
+    const resolved = resolveEventScores(event);
+
+    expect(resolved).toEqual({
+      homeGoalsFt: 2,
+      awayGoalsFt: 1,
+      homeGoals90: 1,
+      awayGoals90: 1,
+      wentToExtraTime: true,
     });
   });
 
@@ -360,6 +400,91 @@ describe("flashscore feed parsing", () => {
         points: 1,
         exactScores: 0,
         resultHits: 1,
+        totalBets: 1,
+      },
+    ]);
+
+    closeAppDatabase(db);
+  });
+
+  test("crawlFlashscoreCompetition awards exact points for a 90-minute prediction after extra time", async () => {
+    const db = await createTestDatabase();
+    await sqlRun(
+      db,
+      `INSERT INTO profiles (user_id, email, display_name, role)
+       VALUES (?, ?, ?, ?)`,
+      ["user_ada", "ada@example.com", "Ada", "USER"],
+    );
+    await sqlRun(
+      db,
+      `INSERT INTO teams (id, source_id, name)
+       VALUES (?, ?, ?)`,
+      ["team_homeet", "homeET", "Home ET"],
+    );
+    await sqlRun(
+      db,
+      `INSERT INTO teams (id, source_id, name)
+       VALUES (?, ?, ?)`,
+      ["team_awayet", "awayET", "Away ET"],
+    );
+    await sqlRun(
+      db,
+      `INSERT INTO matches (
+        id,
+        source_id,
+        stage,
+        kickoff_at,
+        home_team_id,
+        away_team_id,
+        status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [
+        "match_ev_et_1",
+        "ev_et_1",
+        "Quarter-final",
+        mexicoOpenerUnix * 1000,
+        "team_homeet",
+        "team_awayet",
+        "SCHEDULED",
+      ],
+    );
+    await upsertBet(db, {
+      userId: "user_ada",
+      matchId: "match_ev_et_1",
+      predictedHomeGoals: 1,
+      predictedAwayGoals: 1,
+      now: new Date("2026-06-10T12:00:00.000Z"),
+    });
+    const extraTimeHtml = `
+<script>
+cjs.initialFeeds["summary-results"] = { data: \`${extraTimeResultFeed}\`, allEventsCount: 1 };
+</script>
+`;
+    const urls = new Map([
+      [competitionUrl, extraTimeHtml],
+      [fixturesPageUrl, sampleFixturesPageHtml],
+    ]);
+    const fetchImpl = (async (input) => {
+      const body = urls.get(String(input));
+      return new Response(body ?? "not found", { status: body ? 200 : 404 });
+    }) as typeof fetch;
+
+    await crawlFlashscoreCompetition(db, {
+      competitionName: "World Cup 2026",
+      sourceUrl: competitionUrl,
+      baseUrl: "https://www.flashscore.com",
+      fetchImpl,
+      minDelayMs: 0,
+      retries: 0,
+    });
+
+    expect(await getLeaderboard(db)).toEqual([
+      {
+        userId: "user_ada",
+        displayName: "Ada",
+        points: 3,
+        exactScores: 1,
+        resultHits: 0,
         totalBets: 1,
       },
     ]);

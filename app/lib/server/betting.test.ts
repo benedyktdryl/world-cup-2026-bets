@@ -8,6 +8,7 @@ import {
 } from "~/lib/match-betting";
 import {
   getLeaderboard,
+  getScoringGoals,
   recalculateScores,
   scorePrediction,
   settleMatch,
@@ -213,5 +214,60 @@ describe("simple scoring", () => {
     ]);
 
     closeAppDatabase(db);
+  });
+
+  test("grades extra-time matches against 90-minute scores", async () => {
+    const db = await createTestDatabase();
+
+    await upsertBet(db, {
+      userId: "user_ada",
+      matchId: "match_1",
+      predictedHomeGoals: 1,
+      predictedAwayGoals: 1,
+      now: new Date("2026-06-01T07:00:00.000Z"),
+    });
+
+    await settleMatch(db, {
+      matchId: "match_1",
+      homeGoals: 2,
+      awayGoals: 1,
+      homeGoals90: 1,
+      awayGoals90: 1,
+      wentToExtraTime: true,
+    });
+    await recalculateScores(db, "match_1");
+
+    expect(await getLeaderboard(db)).toEqual([
+      {
+        userId: "user_ada",
+        displayName: "Ada",
+        points: 3,
+        exactScores: 1,
+        resultHits: 0,
+        totalBets: 1,
+      },
+      {
+        userId: "user_max",
+        displayName: "Max",
+        points: 0,
+        exactScores: 0,
+        resultHits: 0,
+        totalBets: 0,
+      },
+    ]);
+  });
+
+  test("prefers 90-minute goals for scoring when both score pairs exist", () => {
+    expect(
+      getScoringGoals({
+        home_goals_90: 1,
+        away_goals_90: 1,
+        home_goals: 2,
+        away_goals: 1,
+      }),
+    ).toEqual({
+      homeGoals: 1,
+      awayGoals: 1,
+    });
   });
 });

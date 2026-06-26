@@ -1,4 +1,5 @@
 import { useActionData } from "react-router";
+import { ContestRulesCallout } from "~/components/contest-rules-callout";
 import { MatchesDataTable } from "~/components/matches-data-table";
 import { Empty, EmptyContent, EmptyTitle } from "~/components/ui/empty";
 import { BETTING_CLOSE_HOURS } from "~/lib/contest-rules";
@@ -17,10 +18,15 @@ type MatchRow = {
   status: string;
   home_goals: number | null;
   away_goals: number | null;
+  home_goals_90: number | null;
+  away_goals_90: number | null;
+  went_to_extra_time: number;
   home_team: string | null;
   away_team: string | null;
   predicted_home_goals: number | null;
   predicted_away_goals: number | null;
+  earned_points: number | null;
+  score_reason: "EXACT" | "RESULT" | "MISS" | null;
 };
 
 type ActionResult = { error?: string; ok?: boolean };
@@ -43,17 +49,24 @@ export async function loader({ request }: Route.LoaderArgs) {
         matches.status,
         matches.home_goals,
         matches.away_goals,
+        matches.home_goals_90,
+        matches.away_goals_90,
+        matches.went_to_extra_time,
         home.name AS home_team,
         away.name AS away_team,
         bets.predicted_home_goals,
-        bets.predicted_away_goals
+        bets.predicted_away_goals,
+        scores.points AS earned_points,
+        scores.reason AS score_reason
       FROM matches
       LEFT JOIN teams home ON home.id = matches.home_team_id
       LEFT JOIN teams away ON away.id = matches.away_team_id
       LEFT JOIN bets
         ON bets.match_id = matches.id AND bets.user_id = ?
+      LEFT JOIN scores
+        ON scores.match_id = matches.id AND scores.user_id = ?
       ORDER BY ${MATCHES_ORDER_BY}`,
-      [session.user.id],
+      [session.user.id, session.user.id],
     );
     return { matches };
   });
@@ -125,13 +138,17 @@ export default function Matches({ loaderData }: Route.ComponentProps) {
         </p>
       ) : null}
       <p className="text-muted-foreground text-sm">
-        Scores are home:away — left column is the home team, right column is
-        the away team. You can change predictions until{" "}
+        Predict the score after{" "}
+        <strong className="text-foreground">90 minutes</strong> using home:away
+        format — left column is the home team, right column is the away team.
+        Extra time and penalties do not count toward your points. You can change
+        predictions until{" "}
         <strong className="text-foreground">
           {BETTING_CLOSE_HOURS} hours before kickoff
         </strong>
         .
       </p>
+      <ContestRulesCallout />
       <MatchesDataTable matches={loaderData.matches} />
     </section>
   );

@@ -3,7 +3,7 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { drizzle } from "drizzle-orm/libsql";
 import { env } from "./env";
-import { sqlExec } from "./sql";
+import { sqlAll, sqlExec, sqlRun } from "./sql";
 
 export type AppDatabase = Client;
 
@@ -170,6 +170,9 @@ export async function runMigrations(db: AppDatabase) {
       away_team_id TEXT REFERENCES teams(id),
       home_goals INTEGER,
       away_goals INTEGER,
+      home_goals_90 INTEGER,
+      away_goals_90 INTEGER,
+      went_to_extra_time INTEGER NOT NULL DEFAULT 0,
       status TEXT NOT NULL DEFAULT 'SCHEDULED'
         CHECK (status IN ('SCHEDULED', 'LIVE', 'FINISHED')),
       source_url TEXT,
@@ -231,6 +234,42 @@ export async function runMigrations(db: AppDatabase) {
       finished_at INTEGER
     );
   `,
+  );
+
+  await ensureMatchesScoreColumns(db);
+}
+
+type TableColumnRow = {
+  name: string;
+};
+
+async function ensureMatchesScoreColumns(db: AppDatabase) {
+  const columns = await sqlAll<TableColumnRow>(db, "PRAGMA table_info(matches)");
+  const names = new Set(columns.map((column) => column.name));
+
+  if (!names.has("home_goals_90")) {
+    await sqlExec(db, "ALTER TABLE matches ADD COLUMN home_goals_90 INTEGER");
+  }
+  if (!names.has("away_goals_90")) {
+    await sqlExec(db, "ALTER TABLE matches ADD COLUMN away_goals_90 INTEGER");
+  }
+  if (!names.has("went_to_extra_time")) {
+    await sqlExec(
+      db,
+      "ALTER TABLE matches ADD COLUMN went_to_extra_time INTEGER NOT NULL DEFAULT 0",
+    );
+  }
+
+  await sqlRun(
+    db,
+    `UPDATE matches
+     SET home_goals_90 = home_goals,
+       away_goals_90 = away_goals
+     WHERE status = 'FINISHED'
+       AND home_goals IS NOT NULL
+       AND away_goals IS NOT NULL
+       AND home_goals_90 IS NULL
+       AND away_goals_90 IS NULL`,
   );
 }
 

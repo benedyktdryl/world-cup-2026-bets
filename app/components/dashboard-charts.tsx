@@ -7,6 +7,7 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
+  Line,
   Pie,
   PieChart,
   XAxis,
@@ -21,8 +22,12 @@ import {
 
 const trendChartConfig = {
   cumulative: {
-    label: "Total points",
+    label: "Your points",
     color: "var(--chart-1)",
+  },
+  poolCumulative: {
+    label: "Pool average",
+    color: "var(--chart-4)",
   },
 } satisfies ChartConfig;
 
@@ -59,7 +64,18 @@ const poolChartConfig = {
 type TrendPoint = {
   label: string;
   cumulative: number;
+  poolCumulative?: number;
   points: number;
+  rank?: number;
+  rankDelta?: number;
+};
+
+type StageBreakdownPoint = {
+  label: string;
+  points: number;
+  exact: number;
+  result: number;
+  miss: number;
 };
 
 type Breakdown = {
@@ -67,6 +83,16 @@ type Breakdown = {
   result: number;
   miss: number;
 };
+
+function formatRankDelta(rankDelta?: number) {
+  if (rankDelta == null || rankDelta === 0) {
+    return "No change";
+  }
+  if (rankDelta < 0) {
+    return `Up ${Math.abs(rankDelta)}`;
+  }
+  return `Down ${rankDelta}`;
+}
 
 export function PointsTrendChart({ data }: { data: TrendPoint[] }) {
   if (!data.length) {
@@ -76,6 +102,8 @@ export function PointsTrendChart({ data }: { data: TrendPoint[] }) {
       </p>
     );
   }
+
+  const showPoolAverage = data.some((point) => (point.poolCumulative ?? 0) > 0);
 
   return (
     <ChartContainer config={trendChartConfig} className="h-48 w-full">
@@ -115,14 +143,34 @@ export function PointsTrendChart({ data }: { data: TrendPoint[] }) {
               labelFormatter={(_, payload) =>
                 payload?.[0]?.payload?.label ?? ""
               }
-              formatter={(value, _name, item) => (
-                <span className="flex items-center gap-2">
-                  <span className="font-medium tabular-nums">{value} pts</span>
-                  <span className="text-muted-foreground">
-                    (+{item.payload.points} this match)
-                  </span>
-                </span>
-              )}
+              formatter={(value, name, item) => {
+                if (name === "poolCumulative") {
+                  return (
+                    <span className="font-medium tabular-nums">
+                      Pool avg: {value} pts
+                    </span>
+                  );
+                }
+
+                return (
+                  <div className="grid gap-1">
+                    <span className="flex items-center gap-2">
+                      <span className="font-medium tabular-nums">
+                        {value} pts
+                      </span>
+                      <span className="text-muted-foreground">
+                        (+{item.payload.points} this match)
+                      </span>
+                    </span>
+                    {item.payload.rank != null ? (
+                      <span className="text-muted-foreground text-xs">
+                        Rank #{item.payload.rank} ·{" "}
+                        {formatRankDelta(item.payload.rankDelta)}
+                      </span>
+                    ) : null}
+                  </div>
+                );
+              }}
             />
           }
         />
@@ -135,7 +183,80 @@ export function PointsTrendChart({ data }: { data: TrendPoint[] }) {
           dot={{ r: 3, fill: "var(--color-cumulative)" }}
           activeDot={{ r: 5 }}
         />
+        {showPoolAverage ? (
+          <Line
+            type="monotone"
+            dataKey="poolCumulative"
+            stroke="var(--color-poolCumulative)"
+            strokeWidth={2}
+            strokeDasharray="5 4"
+            dot={false}
+          />
+        ) : null}
       </AreaChart>
+    </ChartContainer>
+  );
+}
+
+export function StageBreakdownChart({ data }: { data: StageBreakdownPoint[] }) {
+  if (!data.length) {
+    return (
+      <p className="flex h-48 items-center justify-center text-muted-foreground text-sm">
+        Stage performance appears once matches settle.
+      </p>
+    );
+  }
+
+  return (
+    <ChartContainer config={breakdownChartConfig} className="h-48 w-full">
+      <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+        <CartesianGrid vertical={false} strokeDasharray="3 3" />
+        <XAxis
+          dataKey="label"
+          tickLine={false}
+          axisLine={false}
+          tickMargin={8}
+          minTickGap={12}
+        />
+        <YAxis
+          tickLine={false}
+          axisLine={false}
+          width={28}
+          allowDecimals={false}
+        />
+        <ChartTooltip
+          content={
+            <ChartTooltipContent
+              formatter={(value, name) => (
+                <span className="font-medium tabular-nums">
+                  {breakdownChartConfig[
+                    name as keyof typeof breakdownChartConfig
+                  ]?.label ?? name}
+                  : {value}
+                </span>
+              )}
+            />
+          }
+        />
+        <Bar
+          dataKey="exact"
+          stackId="stage"
+          fill="var(--color-exact)"
+          radius={[0, 0, 0, 0]}
+        />
+        <Bar
+          dataKey="result"
+          stackId="stage"
+          fill="var(--color-result)"
+          radius={[0, 0, 0, 0]}
+        />
+        <Bar
+          dataKey="miss"
+          stackId="stage"
+          fill="var(--color-miss)"
+          radius={[6, 6, 0, 0]}
+        />
+      </BarChart>
     </ChartContainer>
   );
 }

@@ -65,3 +65,25 @@ export function compareMatchesBySchedule(
 
   return left.id.localeCompare(right.id);
 }
+
+export function normalizeStageLabel(stage: string) {
+  const trimmed = stage.trim();
+
+  if (/^group /i.test(trimmed) || /^round \d+$/i.test(trimmed)) {
+    return "Group stage";
+  }
+  if (/1\/16|round of 16/i.test(trimmed)) {
+    return "Round of 16";
+  }
+  if (/1\/8|quarter/i.test(trimmed)) {
+    return "Quarter-finals";
+  }
+  if (/semi/i.test(trimmed)) {
+    return "Semi-finals";
+  }
+  if (/final/i.test(trimmed)) {
+    return "Final";
+  }
+
+  return trimmed;
+}

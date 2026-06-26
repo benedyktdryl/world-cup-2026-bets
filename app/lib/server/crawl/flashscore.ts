@@ -1,8 +1,21 @@
 import { randomUUID } from "node:crypto";
+import { isKnockoutStage } from "~/lib/match-betting";
 import { recalculateScores } from "../betting";
 import type { AppDatabase } from "../db";
 import { env } from "../env";
 import { sqlGet, sqlRun } from "../sql";
+
+/*
+ * Flashscore feed token mapping (summary/list feeds):
+ * - AG / AH: home / away goals for the displayed final result (includes extra time)
+ * - AT / AU: home / away goals at end of regular time (90 minutes), when present
+ * - AB: match status code (3 = finished)
+ * - AS: auxiliary match flag (not used for scoring)
+ *
+ * Match detail feeds (match summary review, ~III blocks):
+ * - INX / IOX: running home / away score after each incident
+ * - IB / IBX: minute of incident — last score at minute <= 90 is regulation time
+ */
 
 export type FlashscoreFeedEvent = {
   eventId: string;
@@ -17,6 +30,17 @@ export type FlashscoreFeedEvent = {
   awayTeamSlug?: string;
   homeGoals?: number;
   awayGoals?: number;
+  homeGoals90?: number;
+  awayGoals90?: number;
+  wentToExtraTime?: boolean;
+};
+
+export type ResolvedMatchScores = {
+  homeGoalsFt: number;
+  awayGoalsFt: number;
+  homeGoals90: number;
+  awayGoals90: number;
+  wentToExtraTime: boolean;
 };
 
 export type FlashscoreSummaryFeeds = {
@@ -41,6 +65,13 @@ const DEFAULT_FETCHER_OPTIONS = {
   retries: 2,
   cacheTtlMs: 1000 * 60 * 60 * 6,
 };
+
+const MATCH_DETAIL_FEED_KEYS = [
+  "df_sui",
+  "df_dos",
+  "df_hh",
+  "df_ms",
+] as const;
 
 function parseInteger(value: string | undefined): number | undefined {
   if (value == null || value === "") {
@@ -78,6 +109,81 @@ function parseEventBlocks(feedData: string): string[] {
     .map((part) => `AA÷${part}`);
 }
 
+export function parseRegulationScoresFromDetailFeed(feedData: string) {
+  let lastAt90: { home: number; away: number } | null = null;
+
+  for (const block of feedData.split("~III÷").slice(1)) {
+    const tokenMap = parseTokenMap(`III÷${block}`);
+    const minute = parseInteger(tokenMap.get("IB") ?? tokenMap.get("IBX"));
+    const home = parseInteger(tokenMap.get("INX"));
+    const away = parseInteger(tokenMap.get("IOX"));
+
+    if (minute == null || home == null || away == null) {
+      continue;
+    }
+
+    if (minute <= 90) {
+      lastAt90 = { home, away };
+    }
+  }
+
+  return lastAt90;
+}
+
+export function parseRegulationScoresFromEventBlock(eventBlock: string) {
+  const tokenMap = parseTokenMap(eventBlock);
+  const home = parseInteger(tokenMap.get("AT"));
+  const away = parseInteger(tokenMap.get("AU"));
+
+  if (home == null || away == null) {
+    return null;
+  }
+
+  return { home, away };
+}
+
+export function resolveEventScores(
+  event: FlashscoreFeedEvent,
+  detailFeed?: string | null,
+): ResolvedMatchScores | null {
+  const homeGoalsFt = event.homeGoals;
+  const awayGoalsFt = event.awayGoals;
+
+  if (homeGoalsFt == null || awayGoalsFt == null) {
+    return null;
+  }
+
+  let homeGoals90 = event.homeGoals90;
+  let awayGoals90 = event.awayGoals90;
+
+  if (homeGoals90 == null || awayGoals90 == null) {
+    const fromDetailFeed = detailFeed
+      ? parseRegulationScoresFromDetailFeed(detailFeed)
+      : null;
+    if (fromDetailFeed) {
+      homeGoals90 = fromDetailFeed.home;
+      awayGoals90 = fromDetailFeed.away;
+    }
+  }
+
+  if (homeGoals90 == null || awayGoals90 == null) {
+    homeGoals90 = homeGoalsFt;
+    awayGoals90 = awayGoalsFt;
+  }
+
+  const wentToExtraTime =
+    event.wentToExtraTime ??
+    (homeGoals90 !== homeGoalsFt || awayGoals90 !== awayGoalsFt);
+
+  return {
+    homeGoalsFt,
+    awayGoalsFt,
+    homeGoals90,
+    awayGoals90,
+    wentToExtraTime,
+  };
+}
+
 export function parseFeedEvents(feedData: string): FlashscoreFeedEvent[] {
   const events: FlashscoreFeedEvent[] = [];
 
@@ -103,6 +209,11 @@ export function parseFeedEvents(feedData: string): FlashscoreFeedEvent[] {
       continue;
     }
 
+    const homeGoals90 = parseInteger(tokenMap.get("AT"));
+    const awayGoals90 = parseInteger(tokenMap.get("AU"));
+    const homeGoals = parseInteger(tokenMap.get("AG"));
+    const awayGoals = parseInteger(tokenMap.get("AH"));
+
     events.push({
       eventId,
       unixTime,
@@ -114,8 +225,16 @@ export function parseFeedEvents(feedData: string): FlashscoreFeedEvent[] {
       awayTeamName,
       homeTeamSlug: tokenMap.get("WU"),
       awayTeamSlug: tokenMap.get("WV"),
-      homeGoals: parseInteger(tokenMap.get("AG")),
-      awayGoals: parseInteger(tokenMap.get("AH")),
+      homeGoals,
+      awayGoals,
+      homeGoals90,
+      awayGoals90,
+      wentToExtraTime:
+        homeGoals90 != null &&
+        awayGoals90 != null &&
+        homeGoals != null &&
+        awayGoals != null &&
+        (homeGoals90 !== homeGoals || awayGoals90 !== awayGoals),
     });
   }
 
@@ -129,6 +248,17 @@ export function extractInitialFeedData(html: string, feedKey: string) {
     "m",
   );
   return html.match(regex)?.[1] ?? null;
+}
+
+export function extractMatchDetailFeed(html: string) {
+  for (const feedKey of MATCH_DETAIL_FEED_KEYS) {
+    const feed = extractInitialFeedData(html, feedKey);
+    if (feed) {
+      return feed;
+    }
+  }
+
+  return null;
 }
 
 export const WORLD_CUP_2026_FINALS_START_MS = Date.UTC(2026, 5, 10);
@@ -328,6 +458,47 @@ async function upsertTeam(
   );
 }
 
+async function enrichEventScores(
+  fetcher: CachedRateLimitedFetcher,
+  event: FlashscoreFeedEvent,
+  baseUrl: string,
+) {
+  if (event.homeGoals == null || event.awayGoals == null) {
+    return event;
+  }
+
+  const hasRegulationScores =
+    event.homeGoals90 != null && event.awayGoals90 != null;
+  if (hasRegulationScores) {
+    return event;
+  }
+
+  if (!isKnockoutStage(event.round)) {
+    return {
+      ...event,
+      homeGoals90: event.homeGoals,
+      awayGoals90: event.awayGoals,
+      wentToExtraTime: false,
+    };
+  }
+
+  const matchUrl = absoluteUrl(baseUrl, `/match/${event.eventId}/`);
+  const page = await fetcher.fetchHtml(matchUrl);
+  const detailFeed = extractMatchDetailFeed(page.html);
+  const resolved = resolveEventScores(event, detailFeed);
+
+  if (!resolved) {
+    return event;
+  }
+
+  return {
+    ...event,
+    homeGoals90: resolved.homeGoals90,
+    awayGoals90: resolved.awayGoals90,
+    wentToExtraTime: resolved.wentToExtraTime,
+  };
+}
+
 async function upsertMatch(
   db: AppDatabase,
   input: {
@@ -336,8 +507,9 @@ async function upsertMatch(
     baseUrl: string;
   },
 ) {
+  const resolved = resolveEventScores(input.event);
   const status =
-    input.event.homeGoals != null && input.event.awayGoals != null
+    resolved != null
       ? "FINISHED"
       : "SCHEDULED";
   const sourceUrl = absoluteUrl(
@@ -358,10 +530,13 @@ async function upsertMatch(
       away_team_id,
       home_goals,
       away_goals,
+      home_goals_90,
+      away_goals_90,
+      went_to_extra_time,
       status,
       source_url,
       updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       competition_id = excluded.competition_id,
       stage = excluded.stage,
@@ -371,6 +546,9 @@ async function upsertMatch(
       away_team_id = excluded.away_team_id,
       home_goals = excluded.home_goals,
       away_goals = excluded.away_goals,
+      home_goals_90 = excluded.home_goals_90,
+      away_goals_90 = excluded.away_goals_90,
+      went_to_extra_time = excluded.went_to_extra_time,
       status = excluded.status,
       source_url = excluded.source_url,
       updated_at = excluded.updated_at`,
@@ -383,8 +561,11 @@ async function upsertMatch(
       input.event.unixTime * 1000,
       teamId(input.event.homeTeamId),
       teamId(input.event.awayTeamId),
-      input.event.homeGoals ?? null,
-      input.event.awayGoals ?? null,
+      resolved?.homeGoalsFt ?? null,
+      resolved?.awayGoalsFt ?? null,
+      resolved?.homeGoals90 ?? null,
+      resolved?.awayGoals90 ?? null,
+      resolved?.wentToExtraTime ? 1 : 0,
       status,
       sourceUrl,
       Date.now(),
@@ -450,7 +631,9 @@ export async function crawlFlashscoreCompetition(
     const seenTeams = new Set<string>();
     const seenMatches = new Set<string>();
 
-    for (const event of events) {
+    for (const rawEvent of events) {
+      const event = await enrichEventScores(fetcher, rawEvent, input.baseUrl);
+
       if (!seenTeams.has(event.homeTeamId)) {
         await upsertTeam(db, event.homeTeamId, event.homeTeamName, event.round);
         seenTeams.add(event.homeTeamId);
@@ -466,7 +649,8 @@ export async function crawlFlashscoreCompetition(
           event,
           baseUrl: input.baseUrl,
         });
-        if (event.homeGoals != null && event.awayGoals != null) {
+        const resolved = resolveEventScores(event);
+        if (resolved != null) {
           await recalculateScores(db, storedMatchId);
         }
         seenMatches.add(event.eventId);

@@ -10,6 +10,7 @@ import {
   isMatchLockedForBetting,
   isUnfetchedKnockoutMatch,
 } from "~/lib/match-betting";
+import { formatFinishedMatchScore } from "~/lib/match-scores";
 
 export type MatchTableRow = {
   id: string;
@@ -19,16 +20,27 @@ export type MatchTableRow = {
   status: string;
   home_goals: number | null;
   away_goals: number | null;
+  home_goals_90: number | null;
+  away_goals_90: number | null;
+  went_to_extra_time: number;
   home_team: string | null;
   away_team: string | null;
   predicted_home_goals: number | null;
   predicted_away_goals: number | null;
+  earned_points: number | null;
+  score_reason: "EXACT" | "RESULT" | "MISS" | null;
 };
 
 const dateFormatter = new Intl.DateTimeFormat(undefined, {
   dateStyle: "medium",
   timeStyle: "short",
 });
+
+const reasonLabels = {
+  EXACT: "Exact 90′ score",
+  RESULT: "Correct 90′ result",
+  MISS: "Miss",
+} as const;
 
 function lockLabel(match: MatchTableRow) {
   if (match.status === "FINISHED") {
@@ -38,6 +50,16 @@ function lockLabel(match: MatchTableRow) {
     return "Awaiting teams";
   }
   return "Locked";
+}
+
+function reasonBadgeVariant(reason: MatchTableRow["score_reason"]) {
+  if (reason === "EXACT") {
+    return "default" as const;
+  }
+  if (reason === "RESULT") {
+    return "secondary" as const;
+  }
+  return "outline" as const;
 }
 
 const columns: ColumnDef<MatchTableRow>[] = [
@@ -71,6 +93,8 @@ const columns: ColumnDef<MatchTableRow>[] = [
     ),
     cell: ({ row }) => {
       const match = row.original;
+      const finishedScore = formatFinishedMatchScore(match);
+
       return (
         <div className="flex min-w-56 flex-col gap-2">
           <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 text-sm">
@@ -88,9 +112,9 @@ const columns: ColumnDef<MatchTableRow>[] = [
               <span className="font-medium">{match.away_team ?? "TBD"}</span>
             </div>
           </div>
-          {match.status === "FINISHED" ? (
+          {finishedScore ? (
             <span className="text-muted-foreground text-sm tabular-nums">
-              Final {match.home_goals}:{match.away_goals} (home:away)
+              {finishedScore}
             </span>
           ) : null}
         </div>
@@ -103,7 +127,7 @@ const columns: ColumnDef<MatchTableRow>[] = [
       <div className="flex flex-col gap-0.5">
         <span>Your prediction</span>
         <span className="font-normal text-muted-foreground text-xs">
-          Left = home goals · Right = away goals
+          Score after 90′ (home:away)
         </span>
       </div>
     ),
@@ -163,6 +187,43 @@ const columns: ColumnDef<MatchTableRow>[] = [
             {locked ? lockLabel(match) : "Save"}
           </Button>
         </Form>
+      );
+    },
+  },
+  {
+    id: "result",
+    header: "Points",
+    cell: ({ row }) => {
+      const match = row.original;
+
+      if (match.status !== "FINISHED" || match.earned_points == null) {
+        return <span className="text-muted-foreground text-sm">—</span>;
+      }
+
+      const actualHome = match.home_goals_90 ?? match.home_goals ?? 0;
+      const actualAway = match.away_goals_90 ?? match.away_goals ?? 0;
+      const predictedHome = match.predicted_home_goals;
+      const predictedAway = match.predicted_away_goals;
+
+      return (
+        <div className="flex min-w-36 flex-col gap-1">
+          <div className="flex items-center gap-2">
+            <Badge variant={reasonBadgeVariant(match.score_reason)}>
+              +{match.earned_points}
+            </Badge>
+            {match.score_reason ? (
+              <span className="text-muted-foreground text-xs">
+                {reasonLabels[match.score_reason]}
+              </span>
+            ) : null}
+          </div>
+          {predictedHome != null && predictedAway != null ? (
+            <span className="text-muted-foreground text-xs tabular-nums">
+              Pick {predictedHome}:{predictedAway} · 90′ {actualHome}:
+              {actualAway}
+            </span>
+          ) : null}
+        </div>
       );
     },
   },

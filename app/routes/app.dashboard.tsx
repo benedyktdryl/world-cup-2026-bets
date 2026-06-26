@@ -11,8 +11,19 @@ import {
   PointsTrendChart,
   PoolTrendChart,
   PredictionBreakdownChart,
+  StageBreakdownChart,
 } from "~/components/dashboard-charts";
+import { ContestRulesCallout } from "~/components/contest-rules-callout";
 import { Badge } from "~/components/ui/badge";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "~/components/ui/table";
+import { formatFinishedMatchScore } from "~/lib/match-scores";
 import { getDashboardData } from "~/lib/server/dashboard";
 import { withDatabase } from "~/lib/server/db";
 import { requireSession } from "~/lib/server/session";
@@ -85,9 +96,16 @@ function SpotlightCard({
     spotlight.kind === "recent" &&
     match.home_goals != null &&
     match.away_goals != null ? (
-      <p className="mt-3 font-semibold text-4xl tabular-nums tracking-tight">
-        {match.home_goals} – {match.away_goals}
-      </p>
+      <div className="mt-3">
+        <p className="font-semibold text-4xl tabular-nums tracking-tight">
+          {match.home_goals} – {match.away_goals}
+        </p>
+        {match.went_to_extra_time ? (
+          <p className="mt-1 text-muted-foreground text-sm">
+            {formatFinishedMatchScore(match)} · points use the 90′ score
+          </p>
+        ) : null}
+      </div>
     ) : null;
 
   return (
@@ -156,7 +174,17 @@ export default function Dashboard({ loaderData }: Route.ComponentProps) {
             Rank #{stats.rank} of {stats.playerCount}
           </Badge>
         ) : null}
+        {stats.rankDeltaSinceLastMatch != null &&
+        stats.rankDeltaSinceLastMatch !== 0 ? (
+          <Badge variant="outline" className="px-3 py-1 text-sm">
+            {stats.rankDeltaSinceLastMatch < 0
+              ? `Up ${Math.abs(stats.rankDeltaSinceLastMatch)} since last match`
+              : `Down ${stats.rankDeltaSinceLastMatch} since last match`}
+          </Badge>
+        ) : null}
       </div>
+
+      <ContestRulesCallout />
 
       <div className="grid gap-4 xl:grid-cols-[1.4fr_1fr]">
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -187,7 +215,7 @@ export default function Dashboard({ loaderData }: Route.ComponentProps) {
                 Points trend
               </h2>
               <p className="text-muted-foreground text-sm">
-                Cumulative score across settled matches
+                Cumulative score across settled matches, with pool average
               </p>
             </div>
             <Badge variant="outline">{stats.settled} settled</Badge>
@@ -218,6 +246,94 @@ export default function Dashboard({ loaderData }: Route.ComponentProps) {
               }}
             />
           </div>
+        </div>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <div className="rounded-2xl border bg-card p-5 text-card-foreground">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h2 className="font-semibold text-lg tracking-tight">
+                Performance by stage
+              </h2>
+              <p className="text-muted-foreground text-sm">
+                Exact, result, and miss counts by tournament phase
+              </p>
+            </div>
+          </div>
+          <div className="mt-4">
+            <StageBreakdownChart
+              data={loaderData.stageBreakdown.map((stage) => ({
+                label: stage.label,
+                points: stage.points,
+                exact: stage.exact,
+                result: stage.result,
+                miss: stage.miss,
+              }))}
+            />
+          </div>
+        </div>
+
+        <div className="rounded-2xl border bg-card p-5 text-card-foreground">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div>
+              <h2 className="font-semibold text-lg tracking-tight">
+                All settled picks
+              </h2>
+              <p className="text-muted-foreground text-sm">
+                Full history of your graded predictions
+              </p>
+            </div>
+            <Badge variant="outline">{loaderData.pickHistory.length}</Badge>
+          </div>
+          {loaderData.pickHistory.length ? (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Match</TableHead>
+                  <TableHead>Your pick</TableHead>
+                  <TableHead>90′ result</TableHead>
+                  <TableHead className="text-right">Points</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {[...loaderData.pickHistory].reverse().map((pick) => (
+                  <TableRow key={pick.matchId}>
+                    <TableCell>
+                      <div className="min-w-0">
+                        <p className="truncate font-medium text-sm">
+                          {pick.homeTeam} vs {pick.awayTeam}
+                        </p>
+                        <p className="text-muted-foreground text-xs">
+                          {dateFormatter.format(new Date(pick.kickoffAt))}
+                        </p>
+                      </div>
+                    </TableCell>
+                    <TableCell className="tabular-nums">
+                      {pick.predictedHomeGoals}:{pick.predictedAwayGoals}
+                    </TableCell>
+                    <TableCell className="tabular-nums">
+                      {pick.actualHomeGoals90}:{pick.actualAwayGoals90}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <Badge variant={reasonBadgeVariant(pick.reason)}>
+                          {reasonLabels[pick.reason]}
+                        </Badge>
+                        <span className="font-semibold tabular-nums">
+                          +{pick.points}
+                        </span>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          ) : (
+            <p className="text-muted-foreground text-sm">
+              Your settled predictions will appear here after matches finish.
+            </p>
+          )}
         </div>
       </div>
 

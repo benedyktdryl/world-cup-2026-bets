@@ -12,6 +12,9 @@ type MatchRow = {
   group_code: string | null;
   home_goals: number | null;
   away_goals: number | null;
+  home_goals_90: number | null;
+  away_goals_90: number | null;
+  went_to_extra_time: number;
   status: "SCHEDULED" | "LIVE" | "FINISHED";
   home_team: string | null;
   away_team: string | null;
@@ -65,6 +68,29 @@ export function scorePrediction(input: {
   return { points: 0, reason: "MISS" };
 }
 
+export function getScoringGoals(match: {
+  home_goals_90: number | null;
+  away_goals_90: number | null;
+  home_goals: number | null;
+  away_goals: number | null;
+}) {
+  if (match.home_goals_90 != null && match.away_goals_90 != null) {
+    return {
+      homeGoals: match.home_goals_90,
+      awayGoals: match.away_goals_90,
+    };
+  }
+
+  if (match.home_goals != null && match.away_goals != null) {
+    return {
+      homeGoals: match.home_goals,
+      awayGoals: match.away_goals,
+    };
+  }
+
+  return null;
+}
+
 function resultOf(homeGoals: number, awayGoals: number) {
   if (homeGoals > awayGoals) {
     return "HOME";
@@ -85,6 +111,9 @@ async function getMatch(db: AppDatabase, matchId: string) {
       matches.group_code,
       matches.home_goals,
       matches.away_goals,
+      matches.home_goals_90,
+      matches.away_goals_90,
+      matches.went_to_extra_time,
       matches.status,
       home.name AS home_team,
       away.name AS away_team
@@ -153,27 +182,44 @@ export async function settleMatch(
     matchId: string;
     homeGoals: number;
     awayGoals: number;
+    homeGoals90?: number;
+    awayGoals90?: number;
+    wentToExtraTime?: boolean;
   },
 ) {
+  const homeGoals90 = input.homeGoals90 ?? input.homeGoals;
+  const awayGoals90 = input.awayGoals90 ?? input.awayGoals;
+  const wentToExtraTime =
+    input.wentToExtraTime ??
+    (homeGoals90 !== input.homeGoals || awayGoals90 !== input.awayGoals);
+
   await sqlRun(
     db,
     `UPDATE matches
      SET home_goals = ?,
        away_goals = ?,
+       home_goals_90 = ?,
+       away_goals_90 = ?,
+       went_to_extra_time = ?,
        status = 'FINISHED',
        updated_at = ?
      WHERE id = ?`,
-    [input.homeGoals, input.awayGoals, Date.now(), input.matchId],
+    [
+      input.homeGoals,
+      input.awayGoals,
+      homeGoals90,
+      awayGoals90,
+      wentToExtraTime ? 1 : 0,
+      Date.now(),
+      input.matchId,
+    ],
   );
 }
 
 export async function recalculateScores(db: AppDatabase, matchId: string) {
   const match = await getMatch(db, matchId);
-  if (
-    match.status !== "FINISHED" ||
-    match.home_goals == null ||
-    match.away_goals == null
-  ) {
+  const scoringGoals = getScoringGoals(match);
+  if (match.status !== "FINISHED" || scoringGoals == null) {
     return;
   }
 
@@ -191,8 +237,8 @@ export async function recalculateScores(db: AppDatabase, matchId: string) {
       const score = scorePrediction({
         predictedHomeGoals: bet.predicted_home_goals,
         predictedAwayGoals: bet.predicted_away_goals,
-        actualHomeGoals: match.home_goals ?? 0,
-        actualAwayGoals: match.away_goals ?? 0,
+        actualHomeGoals: scoringGoals.homeGoals,
+        actualAwayGoals: scoringGoals.awayGoals,
       });
 
       await sqlRun(

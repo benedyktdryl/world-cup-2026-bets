@@ -13,6 +13,18 @@ const KNOCKOUT_STAGE_PATTERN =
   /1\/\d+|round of \d+|quarter-?final|semi-?final|final/i;
 const QUALIFIER_STAGE_PATTERN = /^round \d+$/i;
 
+export function isKnockoutStage(stage: string | null | undefined) {
+  if (!stage?.trim()) {
+    return false;
+  }
+
+  if (QUALIFIER_STAGE_PATTERN.test(stage.trim())) {
+    return false;
+  }
+
+  return KNOCKOUT_STAGE_PATTERN.test(stage);
+}
+
 export function isUnfetchedKnockoutMatch(match: MatchBettingState) {
   if (QUALIFIER_STAGE_PATTERN.test(match.stage.trim())) {
     return false;
